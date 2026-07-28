@@ -32,7 +32,7 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
   }
 
   // ── Always use the real Zoom display name ──
-  const hostDisplayName = context?.user_name || 'Host';
+  const hostDisplayName = context?.user_name || 'Zoom User';
 
   const [screen, setScreen] = useState('host'); // host | host-loading | host-done
   const [company, setCompany] = useState('');

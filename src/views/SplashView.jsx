@@ -72,21 +72,29 @@ export default function SplashView({ onComplete }) {
       if (cancelled || !onComplete) return;
 
       // ---------------------------------------------------------
-      // ROLE & ROUTING RULES:
-      // - Host: context.explicitRole === true OR context.isHost === true
-      // - Participant: context.explicitRole === false OR not Host
+      // BULLETPROOF ROLE & ROUTING RULES:
       //
-      // PARTICIPANTS NEVER SEE SETUP OR COMPANY SELECTION!
-      // - If meeting is active -> Participant goes directly to Chat
-      // - If meeting is not active -> Participant goes to Waiting View
+      // 1. If SDK explicitly says "participant" or "attendee" (explicitRole === false) -> PARTICIPANT
+      // 2. If SDK explicitly says "host" or "coHost" (explicitRole === true) -> HOST
+      // 3. If SDK role is unknown/missing (explicitRole === null):
+      //    - If active meeting exists on backend -> PARTICIPANT (joining live session)
+      //    - If no active meeting on backend -> HOST (person starting setup)
       // ---------------------------------------------------------
-      const isHost = context.explicitRole === true || context.isHost === true || context.is_host === true;
+      let isHost;
+      if (context.explicitRole === false) {
+        isHost = false;
+      } else if (context.explicitRole === true) {
+        isHost = true;
+      } else {
+        // Unknown SDK role: if meeting not started on backend yet -> user is Host initiating setup!
+        isHost = !activeMeeting;
+      }
 
       context.is_host = isHost;
       context.isHost = isHost;
       context.user_role = isHost ? 'host' : 'participant';
 
-      console.log(`🎯 Route Decision: isHost=${isHost}, activeMeeting=${!!activeMeeting}`);
+      console.log(`🎯 Route Decision: isHost=${isHost}, activeMeeting=${!!activeMeeting}, explicitRole=${context.explicitRole}`);
 
       if (activeMeeting) {
         // Active meeting exists -> Directly into Chat
@@ -103,7 +111,7 @@ export default function SplashView({ onComplete }) {
           console.log('✅ Host -> Chat + Dashboard');
           onComplete(context, companyInfo, 'host-resume');
         } else {
-          console.log('✅ Participant -> Chat directly (No setup/company selection!)');
+          console.log('✅ Participant -> Chat directly (No setup!)');
           onComplete(context, companyInfo, 'participant');
         }
       } else {
@@ -112,7 +120,7 @@ export default function SplashView({ onComplete }) {
           console.log('✅ Host -> Setup View (Company selection)');
           onComplete(context, null, 'host');
         } else {
-          console.log('✅ Participant -> Waiting View (No setup/company selection!)');
+          console.log('✅ Participant -> Waiting View');
           onComplete(context, null, 'participant');
         }
       }

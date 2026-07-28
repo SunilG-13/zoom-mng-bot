@@ -65,60 +65,54 @@ export default function SplashView({ onComplete }) {
         } catch (_) {}
       }
 
-      // Ensure minimum splash duration for polished UX
+      // Minimum splash duration for smooth UX
       const elapsed = Date.now() - startTime;
-      if (elapsed < 1800) await sleep(1800 - elapsed);
+      if (elapsed < 1600) await sleep(1600 - elapsed);
 
       if (cancelled || !onComplete) return;
 
-      // Step 4: Automatic Role Determination & Routing
       // ---------------------------------------------------------
-      // Rule 1: SDK explicitly says Participant (explicitRole === false)
-      // Rule 2: SDK explicitly says Host (explicitRole === true)
-      // Rule 3: SDK Role unknown (explicitRole === null):
-      //         If active meeting exists on backend -> Participant
-      //         If no active meeting on backend -> Host (initiating setup)
+      // ROLE & ROUTING RULES:
+      // - Host: context.explicitRole === true OR context.isHost === true
+      // - Participant: context.explicitRole === false OR not Host
+      //
+      // PARTICIPANTS NEVER SEE SETUP OR COMPANY SELECTION!
+      // - If meeting is active -> Participant goes directly to Chat
+      // - If meeting is not active -> Participant goes to Waiting View
       // ---------------------------------------------------------
-      let isHost;
-      if (context.explicitRole === false) {
-        isHost = false;
-      } else if (context.explicitRole === true) {
-        isHost = true;
-      } else {
-        // Unknown SDK role: if meeting already started on backend -> participant; else host!
-        isHost = !activeMeeting;
-      }
+      const isHost = context.explicitRole === true || context.isHost === true || context.is_host === true;
 
       context.is_host = isHost;
       context.isHost = isHost;
       context.user_role = isHost ? 'host' : 'participant';
 
-      console.log(`🎯 Automatic Route Decision: isHost=${isHost}, activeMeeting=${!!activeMeeting}, explicitRole=${context.explicitRole}`);
+      console.log(`🎯 Route Decision: isHost=${isHost}, activeMeeting=${!!activeMeeting}`);
 
-      if (activeMeeting && !isNew) {
-        // Active meeting exists -> Resume Chat / Join Chat
+      if (activeMeeting) {
+        // Active meeting exists -> Directly into Chat
+        const companyName = activeMeeting.company || 'Biocon';
         const matched = CONFIG.COMPANIES.find(
-          c => c.name.toLowerCase() === (activeMeeting.company || '').toLowerCase()
+          c => c.name.toLowerCase() === companyName.toLowerCase()
         );
         const companyInfo = matched || {
-          id: (activeMeeting.company || 'company').toLowerCase().replace(/\s+/g, '_'),
-          name: activeMeeting.company || 'Company',
+          id: companyName.toLowerCase().replace(/\s+/g, '_'),
+          name: companyName,
         };
 
         if (isHost) {
-          console.log('✅ Resuming Host Chat');
+          console.log('✅ Host -> Chat + Dashboard');
           onComplete(context, companyInfo, 'host-resume');
         } else {
-          console.log('✅ Joining Participant Chat');
+          console.log('✅ Participant -> Chat directly (No setup/company selection!)');
           onComplete(context, companyInfo, 'participant');
         }
       } else {
-        // No active meeting on backend
+        // No active meeting on backend yet
         if (isHost) {
           console.log('✅ Host -> Setup View (Company selection)');
           onComplete(context, null, 'host');
         } else {
-          console.log('✅ Participant -> Waiting View');
+          console.log('✅ Participant -> Waiting View (No setup/company selection!)');
           onComplete(context, null, 'participant');
         }
       }

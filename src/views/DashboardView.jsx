@@ -120,7 +120,7 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
   }, [loadData, onLogsUpdated]);
 
   useEffect(() => {
-    pollRef.current = setInterval(() => loadData(), 10000);
+    pollRef.current = setInterval(() => loadData(), 3000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [loadData]);
 

@@ -48,7 +48,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     };
 
     checkStatus();
-    timer = setInterval(checkStatus, 3000);
+    timer = setInterval(checkStatus, 2000);
 
     return () => {
       isMounted = false;

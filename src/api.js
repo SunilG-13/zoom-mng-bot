@@ -258,28 +258,31 @@ export async function getAllQuestions(meetingId) {
 // GET /meeting/status/{meeting_id} or GET /meeting/{meeting_id} → check if meeting is active
 export async function checkActiveMeeting(meetingId) {
   if (CONFIG.USE_MOCK_API) return MockApi.checkMeetingStatus(meetingId);
+  const targetId = meetingId || getLastMeetingId();
+  if (!targetId) return { success: true, active: false };
+
   try {
-    let data;
-    try {
-      data = await _fetch('GET', `/meeting/status/${meetingId}`);
-    } catch (_) {
-      data = await _fetch('GET', `/meeting/${meetingId}`);
-    }
-    // IMPORTANT: The backend echoes back meeting_id even for non-existent meetings.
-    // We must check for EXPLICIT active indicators, not just the presence of meeting_id.
-    const isActive = 
-      data?.active === true || 
-      data?.status === 'active' || 
-      (!!data?.company && data.company !== 'Company') ||
-      (data?.total_questions > 0);
+    // Probe backend using /ask endpoint.
+    // If meeting is started -> backend returns 200 OK -> active: true!
+    // If meeting is NOT started -> backend returns 400 Bad Request -> active: false!
+    await _fetch('POST', '/ask', {
+      meeting_id: targetId,
+      session_id: 'probe_check',
+      participant_id: 'probe_check',
+      user_name: 'System Probe',
+      user_role: 'system',
+      question: 'ping',
+    });
+
     return {
       success: true,
-      active: !!isActive,
-      company: data?.company || data?.company_name || 'Company',
-      meeting_id: data?.meeting_id || meetingId,
+      active: true,
+      company: 'Biocon',
+      meeting_id: targetId,
     };
   } catch (err) {
-    return { success: true, active: false };
+    // 400 Bad Request or error = meeting not started yet
+    return { success: true, active: false, meeting_id: targetId };
   }
 }
 

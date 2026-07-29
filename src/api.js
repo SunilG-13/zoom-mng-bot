@@ -228,10 +228,11 @@ export async function getPendingQuestions(meetingId) {
   if (CONFIG.USE_MOCK_API) return MockApi.getPendingQuestions(meetingId);
   const data = await _fetch('GET', `/meeting/${meetingId}/pending`);
   // Backend returns { data: [...] } — normalize to { questions: [...] }
-  const questions = (data?.questions || data?.data || []).map(q => ({
-    ...q,
-    status: normalizeStatus(q.status),
-  }));
+  const questions = (data?.questions || data?.data || [])
+    .map(q => ({
+      ...q,
+      status: normalizeStatus(q.status),
+    }));
   return { questions };
 }
 
@@ -242,16 +243,17 @@ export async function getAllQuestions(meetingId) {
   // Backend returns { "data": [...], "total_questions": N }
   // Normalize to { questions: [...] } so the dashboard always works
   const rawList = data?.questions || data?.data || [];
-  const questions = rawList.map(q => ({
-    ...q,
-    // normalize field names (backend may use user_name or username)
-    user_name:  q.user_name  || q.username   || q.userName || 'Unknown User',
-    username:   q.user_name  || q.username   || q.userName || 'Unknown User',
-    question:   q.question   || q.text        || '',
-    answer:     q.answer     || q.response    || q.text_answer || '',
-    timestamp:  q.timestamp  || q.created_at  || q.time || new Date().toISOString(),
-    status: normalizeStatus(q.status),
-  }));
+  const questions = rawList
+    .map(q => ({
+      ...q,
+      // normalize field names (backend may use user_name or username)
+      user_name:  q.user_name  || q.username   || q.userName || 'Unknown User',
+      username:   q.user_name  || q.username   || q.userName || 'Unknown User',
+      question:   q.question   || q.text        || '',
+      answer:     q.answer     || q.response    || q.text_answer || '',
+      timestamp:  q.timestamp  || q.created_at  || q.time || new Date().toISOString(),
+      status: normalizeStatus(q.status),
+    }));
   return { questions, total: data?.total_questions ?? questions.length };
 }
 
@@ -297,13 +299,6 @@ export async function endMeeting(meetingId) {
   try {
     return await _fetch('POST', '/end_meeting', { meeting_id: meetingId });
   } catch (err) {
-    // If backend returns "Invalid meeting_id" or error, try ending active meeting if any
-    try {
-      const active = await checkAnyActiveMeeting();
-      if (active?.meeting_id) {
-        return await _fetch('POST', '/end_meeting', { meeting_id: active.meeting_id });
-      }
-    } catch (_) {}
     // Always return success so the app resets cleanly
     return { success: true, message: 'Meeting ended' };
   }

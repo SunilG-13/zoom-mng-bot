@@ -15,7 +15,7 @@
    4. Uses context.user_name for display 
       — Shows "BIZ AI" or "Sunil Kumar", never "Host" or "Participant"
    ============================================ */
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Icons } from '../components/Icons';
 import { CONFIG, startMeeting } from '../api';
 import { useToast } from '../components/Toast';
@@ -31,25 +31,44 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
     return null;
   }
 
-  // ── Always use the real Zoom display name ──
-  const hostDisplayName = (!isGenericName(context?.user_name))
+  // ── Auto-detected username from Zoom SDK / storage / fallback ──
+  const autoDisplayName = (!isGenericName(context?.user_name))
     ? context.user_name
     : (localStorage.getItem('mng_user_name') || 'Zoom User');
 
   const [screen, setScreen] = useState('host'); // host | host-loading | host-done
   const [company, setCompany] = useState('');
+  const [hostDisplayName, setHostDisplayName] = useState(autoDisplayName);
   const [loadSteps, setLoadSteps] = useState([0, 0, 0, 0, 0]); // 0=pending 1=active 2=done
   const [doneMsg, setDoneMsg] = useState('');
   const cancelRef = useRef(false);
   const toast = useToast();
 
-  const canStart = company.trim().length > 0;
+  // Sync auto-detected username if context updates after initial render
+  useEffect(() => {
+    if (context?.user_name && !isGenericName(context.user_name)) {
+      setHostDisplayName(context.user_name);
+    }
+  }, [context?.user_name]);
+
+  const canStart = company.trim().length > 0 && hostDisplayName.trim().length > 0;
   const [startedMeetingId, setStartedMeetingId] = useState(null);
 
   // ─── HOST: Start Meeting ────────────────────────────────────────────────────
   const handleStartMeeting = async () => {
     if (!canStart) return;
     cancelRef.current = false;
+    const finalHostName = hostDisplayName.trim() || 'Zoom User';
+
+    // Persist edited display name
+    try {
+      localStorage.setItem('mng_user_name', finalHostName);
+    } catch (_) {}
+
+    if (context) {
+      context.user_name = finalHostName;
+    }
+
     setScreen('host-loading');
 
     // Animate steps one by one
@@ -62,7 +81,7 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
 
     try {
       const activeId = context?.meeting_id || `mng_${Date.now()}`;
-      const result = await startMeeting(activeId, company.trim(), hostDisplayName);
+      const result = await startMeeting(activeId, company.trim(), finalHostName);
       const finalId = result?.meeting_id || activeId;
       setStartedMeetingId(finalId);
       saveMeetingId(finalId);
@@ -83,14 +102,15 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
     if (finalId) {
       saveMeetingId(finalId);
     }
-    // Pass the real Zoom display name — never generic "Host"
-    onHostMeetingStarted({ id: co.toLowerCase().replace(/\s+/g, '_'), name: co }, hostDisplayName, finalId);
+    const finalHostName = hostDisplayName.trim() || 'Zoom User';
+    // Pass the real or edited display name
+    onHostMeetingStarted({ id: co.toLowerCase().replace(/\s+/g, '_'), name: co }, finalHostName, finalId);
   };
 
   const stepLabels = ['Locating folder', 'Reading PDFs', 'Processing text', 'Building index', 'Ready'];
 
   // ════════════════════════════════════════════════════════════════════════════
-  // SCREEN: HOST — Enter Company
+  // SCREEN: HOST — Enter Display Name & Company
   // ════════════════════════════════════════════════════════════════════════════
   if (screen === 'host') {
     return (
@@ -100,23 +120,37 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
             <div className="app-header__logo">{Icons.bot}</div>
             <span className="app-header__title">MNG Bot — Host</span>
           </div>
-          {/* Show real Zoom display name */}
+          {/* Show real or edited display name */}
           <div className="app-header__right">
             <span style={{ fontSize: 11, color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-              👤 {hostDisplayName}
+              {Icons.user} {hostDisplayName.trim() || 'Zoom User'}
             </span>
           </div>
         </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '24px 16px' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '24px 16px', overflowY: 'auto' }}>
           <h2 style={{ fontSize: 18, color: 'var(--color-text-primary)', marginBottom: 6 }}>Start Meeting 🚀</h2>
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 24 }}>
-            Enter the company name to load the knowledge base.
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 20 }}>
+            Confirm your display name and enter company name to start.
           </p>
+
+          <label style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6, display: 'block' }}>
+            Your Display Name
+          </label>
+          <div className="search-input" style={{ marginBottom: 16 }}>
+            <span className="search-input__icon">{Icons.user}</span>
+            <input
+              type="text"
+              placeholder="e.g. Sunil Kumar"
+              value={hostDisplayName}
+              onChange={e => setHostDisplayName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && canStart && handleStartMeeting()}
+            />
+          </div>
 
           <label style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6, display: 'block' }}>
             Company Name
           </label>
-          <div className="search-input" style={{ marginBottom: 16 }}>
+          <div className="search-input" style={{ marginBottom: 20 }}>
             <span className="search-input__icon">{Icons.folder}</span>
             <input
               type="text"

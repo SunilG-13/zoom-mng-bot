@@ -51,24 +51,15 @@ export default function SplashView({ onComplete }) {
 
       // Step 3: Check backend active meeting status
       if (!cancelled) setStatusText('Checking meeting status...');
-      const { checkMeetingStatus, checkAnyActiveMeeting, CONFIG } = await import('../api');
+      const { checkMeetingStatus, CONFIG } = await import('../api');
 
       let activeMeeting = null;
 
+      // Always use the meeting_id from Zoom SDK — no blind discovery needed
       if (context.meeting_id && !context.meeting_id.startsWith('fallback-')) {
         try {
           const res = await checkMeetingStatus(context.meeting_id);
           if (res.active && res.meeting_id) activeMeeting = res;
-        } catch (_) {}
-      }
-
-      if (!activeMeeting) {
-        try {
-          const res = await checkAnyActiveMeeting();
-          if (res.active && res.meeting_id) {
-            activeMeeting = res;
-            context.meeting_id = res.meeting_id;
-          }
         } catch (_) {}
       }
 

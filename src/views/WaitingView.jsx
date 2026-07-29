@@ -7,7 +7,7 @@
    Role selection is handled in SplashView.
    ============================================ */
 import { useEffect, useState } from 'react';
-import { checkActiveMeeting, checkAnyActiveMeeting } from '../api';
+import { checkActiveMeeting } from '../api';
 
 export default function WaitingView({ context, onMeetingActive, onClosePanel }) {
   const [statusMsg, setStatusMsg] = useState('Waiting for host to start the AI session...');
@@ -18,12 +18,8 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
 
     const checkStatus = async () => {
       try {
-        let res;
-        if (context?.meeting_id && !context.meeting_id.startsWith('fallback-')) {
-          res = await checkActiveMeeting(context.meeting_id);
-        } else {
-          res = await checkAnyActiveMeeting();
-        }
+        // Always use the meeting_id from Zoom SDK — no blind discovery needed
+        const res = await checkActiveMeeting(context?.meeting_id);
 
         if (res?.active) {
           if (isMounted && onMeetingActive) {

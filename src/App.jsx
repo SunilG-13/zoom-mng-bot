@@ -31,7 +31,7 @@ import SetupView from './views/SetupView';
 import ChatView from './views/ChatView';
 import DashboardView from './views/DashboardView';
 import ExportModal from './views/ExportView';
-import { endMeeting, checkActiveMeeting } from './api';
+import { endMeeting } from './api';
 import { isInZoom, onMeetingEnded } from './zoom';
 import { Icons } from './components/Icons';
 
@@ -45,6 +45,9 @@ function AppInner() {
   const [exportLogs, setExportLogs] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
+  // Incremented on every meeting reset — forces SplashView, ChatView, DashboardView
+  // to fully remount with clean state (prevents stale meeting data leaking across meetings)
+  const [resetGeneration, setResetGeneration] = useState(0);
   const toast = useToast();
 
   // Use ref for meeting_id to avoid stale closures in event listeners
@@ -66,8 +69,11 @@ function AppInner() {
     setExportLogs([]);
     setShowEndModal(false);
     setShowExportModal(false);
-    setCurrentView('splash');
     meetingIdRef.current = null;
+    // Bump generation BEFORE setting view to splash — this ensures the
+    // new SplashView instance has a different key and starts completely fresh
+    setResetGeneration(prev => prev + 1);
+    setCurrentView('splash');
   }, []);
 
   /**
@@ -141,19 +147,19 @@ function AppInner() {
       setMeetingInfo({ company: companyInfo.id, companyName: companyInfo.name });
       setCurrentView('chat');
     } else {
-      // Participant: check active meeting status
-      try {
-        const meeting = await checkActiveMeeting(ctx?.meeting_id);
-        if (meeting?.active) {
-          setMeetingInfo({
-            company: (meeting.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
-            companyName: meeting.company || 'Meeting',
-          });
-          setCurrentView('chat');
-        } else {
-          setCurrentView('waiting');
-        }
-      } catch (_) {
+      // Participant: SplashView already checked /status endpoint
+      // companyInfo is non-null if meeting is active, null otherwise
+      if (companyInfo) {
+        // Meeting is active → go directly to Chat (no setup, no popup)
+        console.log("✅ Participant: Meeting active → Chat directly");
+        setMeetingInfo({
+          company: companyInfo.id,
+          companyName: companyInfo.name,
+        });
+        setCurrentView('chat');
+      } else {
+        // Meeting not started yet → Waiting View (polls until host starts)
+        console.log("✅ Participant: Meeting not started → Waiting View");
         setCurrentView('waiting');
       }
     }
@@ -241,7 +247,7 @@ function AppInner() {
 
   const renderActiveView = () => {
     if (currentView === 'splash') {
-      return <SplashView onComplete={handleSplashComplete} />;
+      return <SplashView key={`splash-${resetGeneration}`} onComplete={handleSplashComplete} />;
     }
     if (currentView === 'waiting') {
       return (
@@ -272,6 +278,7 @@ function AppInner() {
       <>
         <div style={{ display: currentView === 'chat' ? 'flex' : 'none', flexDirection: 'column', height: '100%', width: '100%' }}>
           <ChatView
+            key={`chat-${resetGeneration}`}
             context={ctxWithRole}
             meetingInfo={meetingInfo}
             onNavigate={handleNavigate}
@@ -283,6 +290,7 @@ function AppInner() {
         </div>
         <div style={{ display: currentView === 'dashboard' ? 'flex' : 'none', flexDirection: 'column', height: '100%', width: '100%' }}>
           <DashboardView
+            key={`dash-${resetGeneration}`}
             context={ctxWithRole}
             meetingInfo={meetingInfo}
             onNavigate={handleNavigate}

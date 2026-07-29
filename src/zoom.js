@@ -172,7 +172,9 @@ export async function getMeetingContext() {
       isHost: roleDecision === true,
       is_host: roleDecision === true,
       is_guest: _isGuestMode,
-      session_id: 'zoom_' + (userContext.participantUUID || crypto.randomUUID()),
+      // Include timestamp to ensure unique session per meeting instance
+      // (participantUUID alone is static — reused across meetings)
+      session_id: 'zoom_' + (userContext.participantUUID || crypto.randomUUID()) + '_' + Date.now(),
       _debug: {
         userContextRole: userContext.role,
         roleSource: roleSource,

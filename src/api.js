@@ -255,69 +255,32 @@ export async function getAllQuestions(meetingId) {
   return { questions, total: data?.total_questions ?? questions.length };
 }
 
-// GET /meeting/status/{meeting_id} or GET /meeting/{meeting_id} → check if meeting is active
+// GET /status/{meeting_id}  →  check if meeting is active on backend
+// Uses the dedicated /status endpoint instead of probing via /ask
 export async function checkActiveMeeting(meetingId) {
   if (CONFIG.USE_MOCK_API) return MockApi.checkMeetingStatus(meetingId);
   const targetId = meetingId || getLastMeetingId();
   if (!targetId) return { success: true, active: false };
 
   try {
-    // Probe backend using /ask endpoint.
-    // If meeting is started -> backend returns 200 OK -> active: true!
-    // If meeting is NOT started -> backend returns 400 Bad Request -> active: false!
-    await _fetch('POST', '/ask', {
-      meeting_id: targetId,
-      session_id: 'probe_check',
-      participant_id: 'probe_check',
-      user_name: 'System Probe',
-      user_role: 'system',
-      question: 'ping',
-    });
-
+    const data = await _fetch('GET', `/status/${targetId}`);
+    // Be explicit: only treat status=true or status="active" as active.
+    // A status like "ended" or any other non-active string must NOT be treated as active.
+    const isActive = data.status === true || data.status === 'active'
+      || (typeof data.status === 'string' && data.status.toLowerCase() === 'active');
     return {
       success: true,
-      active: true,
-      company: 'Biocon',
-      meeting_id: targetId,
+      active: isActive,
+      company: data.company || null,
+      meeting_id: data.meeting_id || targetId,
     };
   } catch (err) {
-    // 400 Bad Request or error = meeting not started yet
     return { success: true, active: false, meeting_id: targetId };
   }
 }
 
 export async function checkMeetingStatus(meetingId) {
   return checkActiveMeeting(meetingId);
-}
-
-// GET /meeting/active  →  find ANY active meeting (for participants without a meeting_id)
-export async function checkAnyActiveMeeting() {
-  if (CONFIG.USE_MOCK_API) {
-    // Mock: check all meetings
-    for (const [id, meeting] of Object.entries(MockApi._meetings)) {
-      return { success: true, active: true, company: meeting.company, meeting_id: id };
-    }
-    return { success: true, active: false };
-  }
-  try {
-    // Try the /meeting/active endpoint
-    const data = await _fetch('GET', '/meeting/active');
-    // IMPORTANT: The backend may return { meeting_id: "active" } as a static response
-    // even when no meeting is running. Only treat it as active if:
-    // - meeting_id exists AND is not the literal string "active" (which is the URL path)
-    // - OR it has an explicit active: true field
-    // - OR it has a real company name
-    const hasRealMeetingId = data?.meeting_id && data.meeting_id !== 'active';
-    const isExplicitlyActive = data?.active === true || data?.status === 'active';
-    const hasCompany = !!data?.company && data.company !== 'Company';
-    
-    if (hasRealMeetingId || isExplicitlyActive || hasCompany) {
-      return { success: true, active: true, company: data.company || 'Company', meeting_id: data.meeting_id };
-    }
-    return { success: true, active: false };
-  } catch {
-    return { success: true, active: false };
-  }
 }
 
 // POST /end_meeting  →  { meeting_id }

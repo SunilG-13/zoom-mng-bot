@@ -1,14 +1,6 @@
-/* ============================================
-   MNG Bot — Waiting View
-   Displayed for PARTICIPANTS while waiting for host
-   to start the AI session.
-   
-   Clean UI — no host override buttons.
-   Role selection is handled in SplashView.
-   ============================================ */
 import { useEffect, useState, useRef } from 'react';
 import { checkActiveMeeting, getActiveMeeting } from '../api';
-import { saveMeetingId, saveMeetingUUID } from '../utils/meetingStorage';
+import { saveMeetingId, saveMeetingUUID, isGenericName } from '../utils/meetingStorage';
 
 export default function WaitingView({ context, onMeetingActive, onClosePanel }) {
   const [statusMsg, setStatusMsg] = useState('Waiting for host to start the AI session...');
@@ -81,7 +73,9 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     };
   }, [context?.meeting_id]);
 
-  const displayName = context?.user_name || 'Participant';
+  const displayName = (!isGenericName(context?.user_name))
+    ? context.user_name
+    : (localStorage.getItem('mng_user_name') || 'Participant');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg-primary)', padding: 24 }}>

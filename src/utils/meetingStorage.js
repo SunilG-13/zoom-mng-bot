@@ -83,11 +83,27 @@ export function detectNewMeeting(currentUUID) {
   return { isNew: false, previousUUID: lastUUID };
 }
 
+export function isGenericName(name) {
+  if (!name || typeof name !== 'string') return true;
+  const norm = name.trim().toLowerCase();
+  return (
+    norm === '' ||
+    norm === 'zoom user' ||
+    norm === 'guest user' ||
+    norm === 'unknown user' ||
+    norm === 'participant' ||
+    norm === 'user' ||
+    norm === 'test host' ||
+    norm === 'test user' ||
+    norm === 'host'
+  );
+}
+
 /**
  * Complete session reset — clears all meeting data for a clean start.
  * Called when: new meeting detected during Splash.
  * 
- * By default, this PRESERVES the meetingUUID so the caller can
+ * By default, this PRESERVES the meetingUUID and user_name so the caller can
  * save a new UUID after reset without it being cleared.
  * 
  * Clears:
@@ -113,12 +129,12 @@ export function completeSessionReset() {
     try { localStorage.removeItem(key); } catch {}
   });
 
-  // Clear ALL remaining mng_ prefixed keys
+  // Clear ALL remaining mng_ prefixed keys (except user_name)
   try {
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith('mng_')) {
+      if (key && key.startsWith('mng_') && key !== 'mng_user_name') {
         keysToRemove.push(key);
       }
     }

@@ -26,6 +26,7 @@ import {
   getLastMeetingId,
   saveMeetingId,
   nuclearReset,
+  isGenericName,
 } from './utils/meetingStorage';
 import SetupView from './views/SetupView';
 import ChatView from './views/ChatView';
@@ -172,12 +173,18 @@ function AppInner() {
       saveMeetingId(targetMeetingId);
       meetingIdRef.current = targetMeetingId;
     }
+
+    const resolvedHostName = (!isGenericName(hostName))
+      ? hostName
+      : (!isGenericName(context?.user_name))
+        ? context.user_name
+        : (localStorage.getItem('mng_user_name') || 'Zoom User');
+
     setIsHost(true);
     setMeetingInfo({ company: company.id, companyName: company.name });
     setContext(prev => ({
       ...prev,
-      // Use the real Zoom display name, never generic "Host"
-      user_name: hostName || prev?.user_name || 'Zoom User',
+      user_name: resolvedHostName,
       user_role: 'host',
       is_host: true,
       isHost: true,
@@ -195,10 +202,16 @@ function AppInner() {
       saveMeetingId(targetMeetingId);
       meetingIdRef.current = targetMeetingId;
     }
+
+    const resolvedParticipantName = (!isGenericName(participantName))
+      ? participantName
+      : (!isGenericName(context?.user_name))
+        ? context.user_name
+        : (localStorage.getItem('mng_user_name') || 'Zoom User');
+
     setContext(prev => ({
       ...prev,
-      // Use the real Zoom display name, never generic "Participant"
-      user_name: participantName || prev?.user_name || 'Zoom User',
+      user_name: resolvedParticipantName,
       user_role: 'participant',
       is_host: false,
       isHost: false,

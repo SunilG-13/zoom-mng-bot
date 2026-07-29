@@ -19,7 +19,7 @@ import { useState, useRef } from 'react';
 import { Icons } from '../components/Icons';
 import { CONFIG, startMeeting } from '../api';
 import { useToast } from '../components/Toast';
-import { saveMeetingId } from '../utils/meetingStorage';
+import { saveMeetingId, isGenericName } from '../utils/meetingStorage';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -32,7 +32,9 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
   }
 
   // ── Always use the real Zoom display name ──
-  const hostDisplayName = context?.user_name || 'Zoom User';
+  const hostDisplayName = (!isGenericName(context?.user_name))
+    ? context.user_name
+    : (localStorage.getItem('mng_user_name') || 'Zoom User');
 
   const [screen, setScreen] = useState('host'); // host | host-loading | host-done
   const [company, setCompany] = useState('');

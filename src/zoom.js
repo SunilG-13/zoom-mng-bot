@@ -2,7 +2,7 @@
    MNG Bot — Zoom Apps SDK Integration
    ============================================ */
 import zoomSdk from '@zoom/appssdk';
-import { getLastMeetingId } from './utils/meetingStorage';
+import { getLastMeetingId, isGenericName } from './utils/meetingStorage';
 
 let _sdkReady = false;
 let _configResult = null;
@@ -21,6 +21,7 @@ export async function initZoom() {
       capabilities: [
         'getMeetingContext',
         'getUserContext',
+        'getMeetingParticipants',
         'getRunningContext',
         'getMeetingUUID',
         'onMeetingStarted',
@@ -96,6 +97,26 @@ async function _getUserContextWithRetry(maxAttempts = 2) {
 }
 
 /**
+ * Try getMeetingParticipants with retry logic.
+ */
+async function _getMeetingParticipantsWithRetry(maxAttempts = 2) {
+  if (!_sdkReady || typeof zoomSdk.getMeetingParticipants !== 'function') return [];
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await zoomSdk.getMeetingParticipants();
+      console.log(`👥 getMeetingParticipants (attempt ${attempt}):`, JSON.stringify(res));
+      const list = res?.participants || res?.data || (Array.isArray(res) ? res : []);
+      if (list.length > 0) return list;
+      if (attempt < maxAttempts) await sleep(500);
+    } catch (e) {
+      console.warn(`⚠️ getMeetingParticipants attempt ${attempt} failed:`, e.message);
+      if (attempt < maxAttempts) await sleep(500);
+    }
+  }
+  return [];
+}
+
+/**
  * Try getMeetingContext / getMeetingUUID with retry logic.
  */
 async function _getMeetingContextWithRetry(maxAttempts = 3) {
@@ -133,27 +154,90 @@ async function _getMeetingContextWithRetry(maxAttempts = 3) {
 }
 
 /**
- * Extract display name from user context.
+ * Extract display name from all potential Zoom SDK objects, URL params, and local storage.
  */
-function _resolveDisplayName(userContext) {
+function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParticipant = {}, configResult = {}) {
+  // 1. Check URL parameters
+  const params = new URLSearchParams(window.location.search);
+  const urlName = params.get('username') || params.get('user_name') || params.get('name') || params.get('screenName') || params.get('displayName') || params.get('participantName');
+  if (urlName && !isGenericName(urlName)) {
+    try { localStorage.setItem('mng_user_name', urlName.trim()); } catch {}
+    return urlName.trim();
+  }
+
+  // 2. Candidate list from Zoom SDK Contexts
   const candidates = [
+    // userContext candidates
     userContext?.screenName,
     userContext?.displayName,
+    userContext?.userName,
+    userContext?.user_name,
+    userContext?.name,
+    userContext?.participantName,
+    userContext?.nickname,
     (() => {
-      const first = (userContext?.firstName || '').trim();
-      const last = (userContext?.lastName || '').trim();
+      const first = (userContext?.firstName || userContext?.first_name || '').trim();
+      const last = (userContext?.lastName || userContext?.last_name || '').trim();
       return (first || last) ? `${first} ${last}`.trim() : null;
     })(),
+
+    // matchedParticipant from getMeetingParticipants()
+    matchedParticipant?.screenName,
+    matchedParticipant?.displayName,
+    matchedParticipant?.userName,
+    matchedParticipant?.user_name,
+    matchedParticipant?.name,
+    matchedParticipant?.participantName,
+    (() => {
+      const first = (matchedParticipant?.firstName || matchedParticipant?.first_name || '').trim();
+      const last = (matchedParticipant?.lastName || matchedParticipant?.last_name || '').trim();
+      return (first || last) ? `${first} ${last}`.trim() : null;
+    })(),
+
+    // meetingContext candidates
+    meetingContext?.screenName,
+    meetingContext?.displayName,
+    meetingContext?.userName,
+    meetingContext?.user_name,
+    meetingContext?.name,
+    meetingContext?.participantName,
+    meetingContext?.hostName,
+    meetingContext?.host_name,
+    (() => {
+      const first = (meetingContext?.firstName || meetingContext?.first_name || '').trim();
+      const last = (meetingContext?.lastName || meetingContext?.last_name || '').trim();
+      return (first || last) ? `${first} ${last}`.trim() : null;
+    })(),
+
+    // configResult candidates
+    configResult?.user?.screenName,
+    configResult?.user?.displayName,
+    configResult?.user?.userName,
+    configResult?.user?.name,
+    configResult?.auth?.screenName,
+
+    // email & username
     userContext?.email,
     userContext?.username,
   ];
 
   for (const name of candidates) {
-    if (name && name.trim().length > 0) {
-      return name.trim();
+    if (name && typeof name === 'string' && !isGenericName(name)) {
+      const trimmed = name.trim();
+      try { localStorage.setItem('mng_user_name', trimmed); } catch {}
+      return trimmed;
     }
   }
 
+  // 3. Fallback to previously stored user name
+  try {
+    const saved = localStorage.getItem('mng_user_name');
+    if (saved && !isGenericName(saved)) {
+      return saved.trim();
+    }
+  } catch {}
+
+  // 4. Default if nothing found
   return _isGuestMode ? 'Guest User' : 'Zoom User';
 }
 
@@ -166,10 +250,27 @@ export async function getMeetingContext() {
   try {
     const meetingContext = await _getMeetingContextWithRetry(3);
     const userContext = await _getUserContextWithRetry(2);
+    const participants = await _getMeetingParticipantsWithRetry(2);
+
+    let matchedParticipant = null;
+    if (participants && participants.length > 0) {
+      const myId = userContext.participantUUID || userContext.participantId || userContext.id;
+      if (myId) {
+        matchedParticipant = participants.find(p => p.participantUUID === myId || p.participantId === myId || p.id === myId);
+      }
+      if (!matchedParticipant && participants.length === 1) {
+        matchedParticipant = participants[0];
+      }
+    }
 
     // Evaluate role from all available SDK fields
     let roleDecision = _evaluateRole(userContext.role);
     let roleSource = `userContext.role="${userContext.role}"`;
+
+    if (roleDecision === null && matchedParticipant) {
+      roleDecision = _evaluateRole(matchedParticipant.role);
+      if (roleDecision !== null) roleSource = `matchedParticipant.role`;
+    }
 
     if (roleDecision === null && meetingContext) {
       roleDecision = _evaluateRole(meetingContext.role || meetingContext.userRole);
@@ -182,14 +283,15 @@ export async function getMeetingContext() {
     }
 
     // Check hostUUID vs participantUUID match
-    if (roleDecision === null && meetingContext.hostUUID && userContext.participantUUID) {
-      if (meetingContext.hostUUID === userContext.participantUUID) {
+    if (roleDecision === null && meetingContext.hostUUID && (userContext.participantUUID || userContext.participantId)) {
+      const pUUID = userContext.participantUUID || userContext.participantId;
+      if (meetingContext.hostUUID === pUUID) {
         roleDecision = true;
         roleSource = `hostUUID match`;
       }
     }
 
-    const displayName = _resolveDisplayName(userContext);
+    const displayName = _resolveDisplayName(userContext, meetingContext, matchedParticipant, _configResult);
     let meetingUUID = meetingContext.meetingUUID || meetingContext.meetingID || meetingContext.meetingId || '';
 
     // If still missing, check stored meeting ID before falling back to timestamp
@@ -219,6 +321,7 @@ export async function getMeetingContext() {
         userContextRole: userContext.role,
         roleSource: roleSource,
         explicitRole: roleDecision,
+        resolvedName: displayName,
       },
     };
   } catch (err) {
@@ -231,14 +334,28 @@ function _getFallbackContext() {
   const params = new URLSearchParams(window.location.search);
   const role = params.get('role') || '';
   const explicitRole = _evaluateRole(role);
-  const userName = params.get('username') || '';
+  const userName = params.get('username') || params.get('user_name') || params.get('name') || params.get('screenName') || params.get('displayName') || params.get('participantName') || '';
   const meetingId = params.get('meeting_id') || 'mng-' + Date.now().toString(36);
-  
+
+  let resolvedName = userName.trim();
+  if (isGenericName(resolvedName)) {
+    try {
+      const saved = localStorage.getItem('mng_user_name');
+      if (saved && !isGenericName(saved)) {
+        resolvedName = saved.trim();
+      }
+    } catch {}
+  }
+
+  if (isGenericName(resolvedName)) {
+    resolvedName = explicitRole === true ? 'Test Host' : 'Test User';
+  }
+
   return {
     meeting_id: meetingId,
     meetingUUID: meetingId,
     participant_id: null,
-    user_name: userName || (explicitRole === true ? 'Test Host' : 'Test User'),
+    user_name: resolvedName,
     user_email: null,
     explicitRole: explicitRole,
     is_host: explicitRole === true,

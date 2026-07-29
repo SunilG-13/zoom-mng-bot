@@ -6,6 +6,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Icons } from '../components/Icons';
 import { CONFIG, askQuestion, getAllQuestions, getParticipantQuestions } from '../api';
 import { useToast } from '../components/Toast';
+import { isGenericName } from '../utils/meetingStorage';
 
 function escapeHtml(str) {
   if (!str) return '';
@@ -45,6 +46,16 @@ function normalizeStatus(s) {
   return null;
 }
 
+function resolveSenderName(context) {
+  if (!isGenericName(context?.user_name)) return context.user_name;
+  if (!isGenericName(context?.participantName)) return context.participantName;
+  try {
+    const saved = localStorage.getItem('mng_user_name');
+    if (!isGenericName(saved)) return saved.trim();
+  } catch {}
+  return 'User';
+}
+
 export default function ChatView({ context, meetingInfo, onNavigate, onEndMeeting, onChangeCompany, pendingCount, onClosePanel }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -70,7 +81,7 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
               loadedMsgs.push({
                 id: 'hist_q_' + (q.id || crypto.randomUUID()),
                 type: 'user',
-                sender: q.user_name || q.username || context.user_name || 'User',
+                sender: q.user_name || q.username || resolveSenderName(context),
                 role: q.user_role || (isHost ? 'host' : 'participant'),
                 text: q.question,
                 timestamp: q.timestamp ? new Date(q.timestamp) : new Date(),
@@ -118,7 +129,7 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
     setShowWelcome(false);
 
     // Add user message
-    const senderName = context?.user_name || context?.participantName || 'User';
+    const senderName = resolveSenderName(context);
     const userMsg = {
       id: crypto.randomUUID(),
       type: 'user',
@@ -184,7 +195,7 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
       setInput('');
       setShowWelcome(false);
 
-      const senderName = context?.user_name || context?.participantName || 'User';
+      const senderName = resolveSenderName(context);
       const userMsg = {
         id: crypto.randomUUID(),
         type: 'user',

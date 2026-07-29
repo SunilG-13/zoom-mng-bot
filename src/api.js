@@ -3,7 +3,7 @@
    Full mock API with knowledge base simulation
    ============================================ */
 
-import { getLastMeetingId, saveMeetingId } from './utils/meetingStorage';
+import { getLastMeetingId, saveMeetingId, isGenericName } from './utils/meetingStorage';
 
 // ---- Configuration ----
 const CONFIG = {
@@ -98,6 +98,13 @@ export async function startMeeting(meetingId, company, hostName = 'Host') {
     company = obj.company;
     hostName = obj.host_name || 'Host';
   }
+  if (isGenericName(hostName)) {
+    try {
+      const saved = localStorage.getItem('mng_user_name');
+      if (!isGenericName(saved)) hostName = saved.trim();
+    } catch {}
+  }
+
   const cleanCompany = sanitizeCompany(company);
   if (CONFIG.USE_MOCK_API) return MockApi.startMeeting(meetingId, cleanCompany);
 
@@ -145,7 +152,15 @@ export async function startMeeting(meetingId, company, hostName = 'Host') {
 
 // POST /ask  →  { question, session_id, meeting_id, participant_id, user_name, username, user_role }
 export async function askQuestion(meetingId, sessionId, userName, question, userRole = 'USER', participantId = null, companyName = 'Biocon') {
-  if (CONFIG.USE_MOCK_API) return MockApi.askQuestion(meetingId, sessionId, userName, question, userRole, participantId);
+  if (isGenericName(userName)) {
+    try {
+      const saved = localStorage.getItem('mng_user_name');
+      if (!isGenericName(saved)) userName = saved.trim();
+    } catch {}
+  }
+  const finalUserName = (!isGenericName(userName)) ? userName.trim() : 'Unknown User';
+
+  if (CONFIG.USE_MOCK_API) return MockApi.askQuestion(meetingId, sessionId, finalUserName, question, userRole, participantId);
   const pId = participantId || sessionId;
   let targetMeetingId = meetingId || getLastMeetingId() || `mng_${Date.now()}`;
 
@@ -153,8 +168,8 @@ export async function askQuestion(meetingId, sessionId, userName, question, user
     meeting_id: mId,
     session_id: sessionId,
     participant_id: pId,
-    user_name: userName || 'Unknown User',
-    username: userName || 'Unknown User',
+    user_name: finalUserName,
+    username: finalUserName,
     user_role: userRole || 'USER',
     question,
   });

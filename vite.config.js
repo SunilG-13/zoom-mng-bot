@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
       // Proxy /api requests to the backend to avoid CORS/mixed-content blocks
       proxy: {
         "/api": {
-          target: env.VITE_BACKEND_URL || "http://104.188.118.187:49206",
+          target: env.VITE_BACKEND_URL || "http://216.234.102.170:15637",
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, ""),
         },

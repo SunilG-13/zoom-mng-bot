@@ -91,6 +91,8 @@ export function isGenericName(name) {
     norm === 'zoom user' ||
     norm === 'guest user' ||
     norm === 'unknown user' ||
+    norm === 'unknown_user' ||
+    norm === 'unknown' ||
     norm === 'participant' ||
     norm === 'user' ||
     norm === 'test host' ||

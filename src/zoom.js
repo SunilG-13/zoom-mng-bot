@@ -64,13 +64,13 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
  */
 function _evaluateRole(role) {
   if (role === undefined || role === null || role === '') return null;
-  
+
   if (typeof role === 'number') {
     if (role === 1) return true;
     if (role === 0) return false;
     return null;
   }
-  
+
   const norm = String(role).toLowerCase().trim();
   if (norm === 'host' || norm === 'cohost' || norm === 'co-host' || norm === 'owner') {
     return true;
@@ -149,7 +149,7 @@ async function _getMeetingContextWithRetry(maxAttempts = 3) {
       console.log(`📋 getMeetingContext (attempt ${attempt}):`, JSON.stringify(meetingContext));
       const uuid = meetingContext?.meetingUUID || meetingContext?.meetingID || meetingContext?.meetingId;
       if (uuid) return meetingContext;
-      
+
       // If getMeetingUUID capability is present, try calling it directly
       if (typeof zoomSdk.getMeetingUUID === 'function') {
         try {
@@ -237,7 +237,7 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
   const params = new URLSearchParams(window.location.search);
   const urlName = params.get('username') || params.get('user_name') || params.get('name') || params.get('screenName') || params.get('displayName') || params.get('participantName');
   if (urlName && !isGenericName(urlName)) {
-    try { localStorage.setItem('mng_user_name', urlName.trim()); } catch {}
+    try { localStorage.setItem('mng_user_name', urlName.trim()); } catch { }
     return urlName.trim();
   }
 
@@ -255,7 +255,7 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
     if (src) {
       const found = findScreenNameInObject(src);
       if (found) {
-        try { localStorage.setItem('mng_user_name', found); } catch {}
+        try { localStorage.setItem('mng_user_name', found); } catch { }
         return found;
       }
     }
@@ -267,7 +267,7 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
     if (saved && !isGenericName(saved)) {
       return saved.trim();
     }
-  } catch {}
+  } catch { }
 
   // 4. Default if nothing found
   return _isGuestMode ? 'Guest User' : 'Zoom User';
@@ -385,7 +385,7 @@ function _getFallbackContext() {
       if (saved && !isGenericName(saved)) {
         resolvedName = saved.trim();
       }
-    } catch {}
+    } catch { }
   }
 
   if (isGenericName(resolvedName)) {
@@ -409,25 +409,25 @@ function _getFallbackContext() {
 }
 
 export function onMeetingStarted(cb) {
-  if (!_sdkReady) return () => {};
-  try { 
+  if (!_sdkReady) return () => { };
+  try {
     zoomSdk.addEventListener('onMeetingStarted', cb);
     return () => {
-      try { zoomSdk.removeEventListener('onMeetingStarted', cb); } catch {}
+      try { zoomSdk.removeEventListener('onMeetingStarted', cb); } catch { }
     };
   } catch (_) {
-    return () => {};
+    return () => { };
   }
 }
 
 export function onMeetingEnded(cb) {
-  if (!_sdkReady) return () => {};
-  try { 
+  if (!_sdkReady) return () => { };
+  try {
     zoomSdk.addEventListener('onMeetingEnded', cb);
     return () => {
-      try { zoomSdk.removeEventListener('onMeetingEnded', cb); } catch {}
+      try { zoomSdk.removeEventListener('onMeetingEnded', cb); } catch { }
     };
   } catch (_) {
-    return () => {};
+    return () => { };
   }
 }

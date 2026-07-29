@@ -81,7 +81,7 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
               loadedMsgs.push({
                 id: 'hist_q_' + (q.id || crypto.randomUUID()),
                 type: 'user',
-                sender: q.user_name || q.username || resolveSenderName(context),
+                sender: (!isGenericName(q.user_name || q.username)) ? (q.user_name || q.username).trim() : resolveSenderName(context),
                 role: q.user_role || (isHost ? 'host' : 'participant'),
                 text: q.question,
                 timestamp: q.timestamp ? new Date(q.timestamp) : new Date(),

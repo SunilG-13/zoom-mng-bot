@@ -226,7 +226,7 @@ export async function getParticipantQuestions(meetingId, participantId, sessionI
       .filter(q => !pid || q.participant_id === pid || q.session_id === pid || q.user_name === pid || q.username === pid)
       .map(q => {
         const rawName = q.user_name || q.username || q.userName;
-        const resolvedName = (rawName && rawName !== 'Unknown User' && rawName.trim())
+        const resolvedName = (!isGenericName(rawName))
           ? rawName.trim()
           : (localStorage.getItem('mng_user_name') || 'Zoom User');
         return {
@@ -268,7 +268,7 @@ export async function getAllQuestions(meetingId) {
   const questions = rawList
     .map(q => {
       const rawName = q.user_name || q.username || q.userName;
-      const resolvedName = (rawName && rawName !== 'Unknown User' && rawName.trim())
+      const resolvedName = (!isGenericName(rawName))
         ? rawName.trim()
         : (localStorage.getItem('mng_user_name') || 'Zoom User');
       return {

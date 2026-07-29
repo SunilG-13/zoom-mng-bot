@@ -47,13 +47,13 @@ function normalizeStatus(s) {
 }
 
 function resolveSenderName(context) {
-  if (!isGenericName(context?.user_name)) return context.user_name;
-  if (!isGenericName(context?.participantName)) return context.participantName;
+  if (context?.user_name && !isGenericName(context.user_name)) return context.user_name.trim();
+  if (context?.participantName && !isGenericName(context.participantName)) return context.participantName.trim();
   try {
     const saved = localStorage.getItem('mng_user_name');
-    if (!isGenericName(saved)) return saved.trim();
+    if (saved && !isGenericName(saved)) return saved.trim();
   } catch {}
-  return 'User';
+  return (context?.user_name && context.user_name.trim()) ? context.user_name.trim() : 'Zoom User';
 }
 
 export default function ChatView({ context, meetingInfo, onNavigate, onEndMeeting, onChangeCompany, pendingCount, onClosePanel }) {

@@ -176,6 +176,60 @@ async function _getMeetingContextWithRetry(maxAttempts = 3) {
 }
 
 /**
+ * Recursively search any object/array for screen name properties.
+ */
+function findScreenNameInObject(obj, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 4) return null;
+
+  // 1. Direct property check for screen name keys
+  const keys = Object.keys(obj);
+  for (const k of keys) {
+    const val = obj[k];
+    if (typeof val === 'string' && val.trim().length > 0 && !isGenericName(val)) {
+      const lowerKey = k.toLowerCase();
+      if (
+        lowerKey.includes('screen') ||
+        lowerKey.includes('display') ||
+        lowerKey.includes('username') ||
+        lowerKey.includes('user_name') ||
+        lowerKey.includes('participant') ||
+        lowerKey.includes('hostname') ||
+        lowerKey.includes('host_name') ||
+        lowerKey.includes('nickname') ||
+        lowerKey === 'name'
+      ) {
+        return val.trim();
+      }
+    }
+  }
+
+  // 2. First name + last name combination
+  const first = (obj.firstName || obj.first_name || obj.givenName || obj.first || '').trim();
+  const last = (obj.lastName || obj.last_name || obj.familyName || obj.last || '').trim();
+  if ((first || last) && !isGenericName(`${first} ${last}`.trim())) {
+    return `${first} ${last}`.trim();
+  }
+
+  // 3. Recurse into child objects & arrays
+  for (const k of keys) {
+    const val = obj[k];
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
+      const found = findScreenNameInObject(val, depth + 1);
+      if (found) return found;
+    } else if (Array.isArray(val)) {
+      for (const item of val) {
+        if (item && typeof item === 'object') {
+          const found = findScreenNameInObject(item, depth + 1);
+          if (found) return found;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Extract display name from all potential Zoom SDK objects, URL params, and local storage.
  */
 function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParticipant = {}, configResult = {}, userObj = {}, participantsList = []) {
@@ -187,75 +241,23 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
     return urlName.trim();
   }
 
-  const makeFullName = (obj) => {
-    if (!obj) return null;
-    const first = (obj.firstName || obj.first_name || obj.givenName || '').trim();
-    const last = (obj.lastName || obj.last_name || obj.familyName || '').trim();
-    return (first || last) ? `${first} ${last}`.trim() : null;
-  };
-
-  // 2. Candidate list from Zoom SDK Contexts (ordered by highest reliability)
-  const candidates = [
-    // zoomSdk.getUser() response
-    userObj?.screenName,
-    userObj?.displayName,
-    userObj?.userName,
-    userObj?.user_name,
-    userObj?.name,
-    userObj?.participantName,
-    makeFullName(userObj),
-
-    // userContext candidates
-    userContext?.screenName,
-    userContext?.displayName,
-    userContext?.userName,
-    userContext?.user_name,
-    userContext?.name,
-    userContext?.participantName,
-    userContext?.nickname,
-    makeFullName(userContext),
-
-    // matchedParticipant from getMeetingParticipants()
-    matchedParticipant?.screenName,
-    matchedParticipant?.displayName,
-    matchedParticipant?.userName,
-    matchedParticipant?.user_name,
-    matchedParticipant?.name,
-    matchedParticipant?.participantName,
-    makeFullName(matchedParticipant),
-
-    // Any participant in participantsList with a non-generic screenName
-    ...(Array.isArray(participantsList) ? participantsList.map(p => p?.screenName || p?.displayName || p?.userName || p?.name || makeFullName(p)).filter(Boolean) : []),
-
-    // meetingContext candidates
-    meetingContext?.screenName,
-    meetingContext?.displayName,
-    meetingContext?.userName,
-    meetingContext?.user_name,
-    meetingContext?.name,
-    meetingContext?.participantName,
-    meetingContext?.hostName,
-    meetingContext?.host_name,
-    makeFullName(meetingContext),
-
-    // configResult candidates
-    configResult?.user?.screenName,
-    configResult?.user?.displayName,
-    configResult?.user?.userName,
-    configResult?.user?.name,
-    configResult?.auth?.screenName,
-
-    // email & username
-    userObj?.email,
-    userContext?.email,
-    userContext?.username,
+  // 2. Scan all Zoom SDK sources deeply
+  const sources = [
+    userObj,
+    matchedParticipant,
+    userContext,
+    participantsList,
+    meetingContext,
+    configResult,
   ];
 
-  for (const name of candidates) {
-    if (name && typeof name === 'string' && !isGenericName(name)) {
-      const trimmed = name.trim();
-      try { localStorage.setItem('mng_user_name', trimmed); } catch {}
-      return trimmed;
+  for (const src of sources) {
+    if (src) {
+      const found = findScreenNameInObject(src);
+      if (found) {
+        try { localStorage.setItem('mng_user_name', found); } catch {}
+        return found;
+      }
     }
   }
 

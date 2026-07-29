@@ -22,10 +22,13 @@ export async function initZoom() {
         'getMeetingContext',
         'getUserContext',
         'getMeetingParticipants',
+        'getUser',
         'getRunningContext',
         'getMeetingUUID',
         'onMeetingStarted',
         'onMeetingEnded',
+        'onParticipantChange',
+        'onUserContextChange',
         'expandApp',
         'openUrl',
       ],
@@ -97,6 +100,25 @@ async function _getUserContextWithRetry(maxAttempts = 2) {
 }
 
 /**
+ * Try getUser API with retry logic.
+ */
+async function _getUserWithRetry(maxAttempts = 2) {
+  if (!_sdkReady || typeof zoomSdk.getUser !== 'function') return {};
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const user = await zoomSdk.getUser();
+      console.log(`👤 getUser direct (attempt ${attempt}):`, JSON.stringify(user));
+      if (user && Object.keys(user).length > 0) return user;
+      if (attempt < maxAttempts) await sleep(500);
+    } catch (e) {
+      console.warn(`⚠️ getUser attempt ${attempt} failed:`, e.message);
+      if (attempt < maxAttempts) await sleep(500);
+    }
+  }
+  return {};
+}
+
+/**
  * Try getMeetingParticipants with retry logic.
  */
 async function _getMeetingParticipantsWithRetry(maxAttempts = 2) {
@@ -156,7 +178,7 @@ async function _getMeetingContextWithRetry(maxAttempts = 3) {
 /**
  * Extract display name from all potential Zoom SDK objects, URL params, and local storage.
  */
-function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParticipant = {}, configResult = {}) {
+function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParticipant = {}, configResult = {}, userObj = {}, participantsList = []) {
   // 1. Check URL parameters
   const params = new URLSearchParams(window.location.search);
   const urlName = params.get('username') || params.get('user_name') || params.get('name') || params.get('screenName') || params.get('displayName') || params.get('participantName');
@@ -165,8 +187,24 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
     return urlName.trim();
   }
 
-  // 2. Candidate list from Zoom SDK Contexts
+  const makeFullName = (obj) => {
+    if (!obj) return null;
+    const first = (obj.firstName || obj.first_name || obj.givenName || '').trim();
+    const last = (obj.lastName || obj.last_name || obj.familyName || '').trim();
+    return (first || last) ? `${first} ${last}`.trim() : null;
+  };
+
+  // 2. Candidate list from Zoom SDK Contexts (ordered by highest reliability)
   const candidates = [
+    // zoomSdk.getUser() response
+    userObj?.screenName,
+    userObj?.displayName,
+    userObj?.userName,
+    userObj?.user_name,
+    userObj?.name,
+    userObj?.participantName,
+    makeFullName(userObj),
+
     // userContext candidates
     userContext?.screenName,
     userContext?.displayName,
@@ -175,11 +213,7 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
     userContext?.name,
     userContext?.participantName,
     userContext?.nickname,
-    (() => {
-      const first = (userContext?.firstName || userContext?.first_name || '').trim();
-      const last = (userContext?.lastName || userContext?.last_name || '').trim();
-      return (first || last) ? `${first} ${last}`.trim() : null;
-    })(),
+    makeFullName(userContext),
 
     // matchedParticipant from getMeetingParticipants()
     matchedParticipant?.screenName,
@@ -188,11 +222,10 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
     matchedParticipant?.user_name,
     matchedParticipant?.name,
     matchedParticipant?.participantName,
-    (() => {
-      const first = (matchedParticipant?.firstName || matchedParticipant?.first_name || '').trim();
-      const last = (matchedParticipant?.lastName || matchedParticipant?.last_name || '').trim();
-      return (first || last) ? `${first} ${last}`.trim() : null;
-    })(),
+    makeFullName(matchedParticipant),
+
+    // Any participant in participantsList with a non-generic screenName
+    ...(Array.isArray(participantsList) ? participantsList.map(p => p?.screenName || p?.displayName || p?.userName || p?.name || makeFullName(p)).filter(Boolean) : []),
 
     // meetingContext candidates
     meetingContext?.screenName,
@@ -203,11 +236,7 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
     meetingContext?.participantName,
     meetingContext?.hostName,
     meetingContext?.host_name,
-    (() => {
-      const first = (meetingContext?.firstName || meetingContext?.first_name || '').trim();
-      const last = (meetingContext?.lastName || meetingContext?.last_name || '').trim();
-      return (first || last) ? `${first} ${last}`.trim() : null;
-    })(),
+    makeFullName(meetingContext),
 
     // configResult candidates
     configResult?.user?.screenName,
@@ -217,6 +246,7 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
     configResult?.auth?.screenName,
 
     // email & username
+    userObj?.email,
     userContext?.email,
     userContext?.username,
   ];
@@ -250,13 +280,17 @@ export async function getMeetingContext() {
   try {
     const meetingContext = await _getMeetingContextWithRetry(3);
     const userContext = await _getUserContextWithRetry(2);
+    const userObj = await _getUserWithRetry(2);
     const participants = await _getMeetingParticipantsWithRetry(2);
 
     let matchedParticipant = null;
     if (participants && participants.length > 0) {
-      const myId = userContext.participantUUID || userContext.participantId || userContext.id;
+      const myId = userContext.participantUUID || userContext.participantId || userContext.id || userObj.participantUUID || userObj.id;
       if (myId) {
-        matchedParticipant = participants.find(p => p.participantUUID === myId || p.participantId === myId || p.id === myId);
+        matchedParticipant = participants.find(p => {
+          const pId = p.participantUUID || p.participantId || p.id || p.user_id || p.userId;
+          return pId && String(pId).toLowerCase() === String(myId).toLowerCase();
+        });
       }
       if (!matchedParticipant && participants.length === 1) {
         matchedParticipant = participants[0];
@@ -270,6 +304,11 @@ export async function getMeetingContext() {
     if (roleDecision === null && matchedParticipant) {
       roleDecision = _evaluateRole(matchedParticipant.role);
       if (roleDecision !== null) roleSource = `matchedParticipant.role`;
+    }
+
+    if (roleDecision === null && userObj) {
+      roleDecision = _evaluateRole(userObj.role);
+      if (roleDecision !== null) roleSource = `userObj.role`;
     }
 
     if (roleDecision === null && meetingContext) {
@@ -291,7 +330,7 @@ export async function getMeetingContext() {
       }
     }
 
-    const displayName = _resolveDisplayName(userContext, meetingContext, matchedParticipant, _configResult);
+    const displayName = _resolveDisplayName(userContext, meetingContext, matchedParticipant, _configResult, userObj, participants);
     let meetingUUID = meetingContext.meetingUUID || meetingContext.meetingID || meetingContext.meetingId || '';
 
     // If still missing, check stored meeting ID before falling back to timestamp
@@ -306,9 +345,9 @@ export async function getMeetingContext() {
     return {
       meeting_id: meetingUUID || `meeting-${Date.now()}`,
       meetingUUID: meetingUUID,
-      participant_id: userContext.participantUUID || userContext.participantId || null,
+      participant_id: userContext.participantUUID || userContext.participantId || userObj.participantUUID || null,
       user_name: displayName,
-      user_email: userContext.email || null,
+      user_email: userContext.email || userObj.email || null,
       // explicitRole is true (host), false (participant), or null (unknown)
       explicitRole: roleDecision,
       isHost: roleDecision === true,
@@ -316,7 +355,7 @@ export async function getMeetingContext() {
       is_guest: _isGuestMode,
       // Include timestamp to ensure unique session per meeting instance
       // (participantUUID alone is static — reused across meetings)
-      session_id: 'zoom_' + (userContext.participantUUID || crypto.randomUUID()) + '_' + Date.now(),
+      session_id: 'zoom_' + (userContext.participantUUID || userObj.participantUUID || crypto.randomUUID()) + '_' + Date.now(),
       _debug: {
         userContextRole: userContext.role,
         roleSource: roleSource,

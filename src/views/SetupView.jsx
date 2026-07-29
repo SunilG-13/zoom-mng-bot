@@ -32,19 +32,17 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
   }
 
   // ── Always use the real Zoom display name ──
-  const initialHostName = (!isGenericName(context?.user_name))
+  const hostDisplayName = (!isGenericName(context?.user_name))
     ? context.user_name
     : (localStorage.getItem('mng_user_name') || 'Zoom User');
 
   const [screen, setScreen] = useState('host'); // host | host-loading | host-done
   const [company, setCompany] = useState('');
-  const [userNameInput, setUserNameInput] = useState(initialHostName);
   const [loadSteps, setLoadSteps] = useState([0, 0, 0, 0, 0]); // 0=pending 1=active 2=done
   const [doneMsg, setDoneMsg] = useState('');
   const cancelRef = useRef(false);
   const toast = useToast();
 
-  const hostDisplayName = userNameInput.trim() || initialHostName;
   const canStart = company.trim().length > 0;
   const [startedMeetingId, setStartedMeetingId] = useState(null);
 
@@ -53,9 +51,6 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
     if (!canStart) return;
     cancelRef.current = false;
     setScreen('host-loading');
-
-    const finalHostName = userNameInput.trim() || hostDisplayName;
-    try { localStorage.setItem('mng_user_name', finalHostName); } catch {}
 
     // Animate steps one by one
     const stepDurations = [700, 900, 800, 700, 500];
@@ -67,7 +62,7 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
 
     try {
       const activeId = context?.meeting_id || `mng_${Date.now()}`;
-      const result = await startMeeting(activeId, company.trim(), finalHostName);
+      const result = await startMeeting(activeId, company.trim(), hostDisplayName);
       const finalId = result?.meeting_id || activeId;
       setStartedMeetingId(finalId);
       saveMeetingId(finalId);
@@ -88,9 +83,8 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
     if (finalId) {
       saveMeetingId(finalId);
     }
-    const finalHostName = userNameInput.trim() || hostDisplayName;
     // Pass the real Zoom display name — never generic "Host"
-    onHostMeetingStarted({ id: co.toLowerCase().replace(/\s+/g, '_'), name: co }, finalHostName, finalId);
+    onHostMeetingStarted({ id: co.toLowerCase().replace(/\s+/g, '_'), name: co }, hostDisplayName, finalId);
   };
 
   const stepLabels = ['Locating folder', 'Reading PDFs', 'Processing text', 'Building index', 'Ready'];
@@ -115,30 +109,14 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
         </div>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '24px 16px' }}>
           <h2 style={{ fontSize: 18, color: 'var(--color-text-primary)', marginBottom: 6 }}>Start Meeting 🚀</h2>
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 20 }}>
-            Configure meeting settings and load the knowledge base.
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 24 }}>
+            Enter the company name to load the knowledge base.
           </p>
-
-          <label style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6, display: 'block' }}>
-            Host Name (Your Display Name)
-          </label>
-          <div className="search-input" style={{ marginBottom: 14 }}>
-            <span className="search-input__icon">👤</span>
-            <input
-              type="text"
-              placeholder="e.g. CHETHANA N"
-              value={userNameInput}
-              onChange={e => {
-                setUserNameInput(e.target.value);
-                try { localStorage.setItem('mng_user_name', e.target.value.trim()); } catch {}
-              }}
-            />
-          </div>
 
           <label style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6, display: 'block' }}>
             Company Name
           </label>
-          <div className="search-input" style={{ marginBottom: 20 }}>
+          <div className="search-input" style={{ marginBottom: 16 }}>
             <span className="search-input__icon">{Icons.folder}</span>
             <input
               type="text"

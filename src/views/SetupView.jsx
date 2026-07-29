@@ -60,9 +60,9 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
     cancelRef.current = false;
     const finalHostName = hostDisplayName.trim() || 'Zoom User';
 
-    // Persist edited display name
+    // Persist edited display name under host key
     try {
-      localStorage.setItem('mng_user_name', finalHostName);
+      localStorage.setItem('mng_host_user_name', finalHostName);
     } catch (_) {}
 
     if (context) {

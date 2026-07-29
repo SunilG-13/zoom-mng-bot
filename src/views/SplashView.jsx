@@ -152,8 +152,14 @@ export default function SplashView({ onComplete }) {
         console.log('✅ Host -> Chat + Dashboard');
         onComplete(context, companyInfo, 'host-resume');
       } else {
-        console.log('✅ Participant -> Chat directly (No setup!)');
-        onComplete(context, companyInfo, 'participant');
+        const hasJoinedInSession = sessionStorage.getItem('mng_participant_joined') === 'true';
+        if (hasJoinedInSession) {
+          console.log('✅ Participant (already joined in session) -> Chat directly');
+          onComplete(context, companyInfo, 'participant');
+        } else {
+          console.log('✅ Participant (first time) -> Waiting / Join View');
+          onComplete(context, companyInfo, 'participant-setup');
+        }
       }
     } else {
       // No active meeting on backend yet
@@ -162,7 +168,7 @@ export default function SplashView({ onComplete }) {
         onComplete(context, null, 'host');
       } else {
         console.log('✅ Participant -> Waiting View');
-        onComplete(context, null, 'participant');
+        onComplete(context, null, 'waiting');
       }
     }
   };

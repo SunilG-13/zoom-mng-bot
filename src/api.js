@@ -100,7 +100,7 @@ export async function startMeeting(meetingId, company, hostName = 'Host') {
   }
   if (isGenericName(hostName)) {
     try {
-      const saved = localStorage.getItem('mng_user_name');
+      const saved = localStorage.getItem('mng_host_user_name');
       if (!isGenericName(saved)) hostName = saved.trim();
     } catch {}
   }
@@ -155,11 +155,11 @@ export async function askQuestion(meetingId, sessionId, userName, question, user
   let resolvedName = userName;
   if (isGenericName(resolvedName)) {
     try {
-      const saved = localStorage.getItem('mng_user_name');
+      const saved = localStorage.getItem('mng_participant_user_name');
       if (saved && saved.trim()) resolvedName = saved.trim();
     } catch {}
   }
-  const finalUserName = (resolvedName && resolvedName.trim()) ? resolvedName.trim() : 'Zoom User';
+  const finalUserName = (resolvedName && resolvedName.trim()) ? resolvedName.trim() : 'Participant';
 
   if (CONFIG.USE_MOCK_API) return MockApi.askQuestion(meetingId, sessionId, finalUserName, question, userRole, participantId);
   const pId = participantId || sessionId;
@@ -226,9 +226,9 @@ export async function getParticipantQuestions(meetingId, participantId, sessionI
       .filter(q => !pid || q.participant_id === pid || q.session_id === pid || q.user_name === pid || q.username === pid)
       .map(q => {
         const rawName = q.user_name || q.username || q.userName;
-        const resolvedName = (!isGenericName(rawName))
+        const resolvedName = (rawName && rawName.trim())
           ? rawName.trim()
-          : (localStorage.getItem('mng_user_name') || 'Zoom User');
+          : 'Participant';
         return {
           ...q,
           user_name: resolvedName,
@@ -268,9 +268,9 @@ export async function getAllQuestions(meetingId) {
   const questions = rawList
     .map(q => {
       const rawName = q.user_name || q.username || q.userName;
-      const resolvedName = (!isGenericName(rawName))
+      const resolvedName = (rawName && rawName.trim())
         ? rawName.trim()
-        : (localStorage.getItem('mng_user_name') || 'Zoom User');
+        : 'Participant';
       return {
         ...q,
         // normalize field names (backend may use user_name or username)

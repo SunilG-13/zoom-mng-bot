@@ -136,7 +136,7 @@ export function completeSessionReset() {
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith('mng_') && key !== 'mng_user_name') {
+      if (key && key.startsWith('mng_') && key !== 'mng_user_name' && key !== 'mng_host_user_name' && key !== 'mng_participant_user_name') {
         keysToRemove.push(key);
       }
     }

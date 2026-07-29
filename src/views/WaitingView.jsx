@@ -1,13 +1,27 @@
 import { useEffect, useState, useRef } from 'react';
 import { checkActiveMeeting, getActiveMeeting } from '../api';
 import { saveMeetingId, saveMeetingUUID, isGenericName } from '../utils/meetingStorage';
+import { Icons } from '../components/Icons';
 
 export default function WaitingView({ context, onMeetingActive, onClosePanel }) {
-  const [statusMsg, setStatusMsg] = useState('Waiting for host to start the AI session...');
-  const [checkCount, setCheckCount] = useState(0);
-  // Use ref for onMeetingActive to avoid re-running effect when callback reference changes
+  const autoName = (!isGenericName(context?.user_name))
+    ? context.user_name
+    : (localStorage.getItem('mng_participant_user_name') || 'Guest User');
+
+  const [participantName, setParticipantName] = useState(autoName);
+  const [statusMsg, setStatusMsg] = useState('Checking host status...');
+  const [activeMeetingData, setActiveMeetingData] = useState(null);
+  const [isJoining, setIsJoining] = useState(false);
+
   const onMeetingActiveRef = useRef(onMeetingActive);
   onMeetingActiveRef.current = onMeetingActive;
+
+  // Sync auto-detected username if Zoom SDK context arrives later
+  useEffect(() => {
+    if (context?.user_name && !isGenericName(context.user_name)) {
+      setParticipantName(context.user_name);
+    }
+  }, [context?.user_name]);
 
   useEffect(() => {
     let isMounted = true;
@@ -18,7 +32,6 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
 
     const checkStatus = async () => {
       try {
-        console.log(`⏳ WaitingView: Checking status for "${meetingId}"...`);
         let res = await checkActiveMeeting(meetingId);
         if (!res?.active) {
           const discovery = await getActiveMeeting();
@@ -26,45 +39,27 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
             res = discovery;
           }
         }
-        console.log(`⏳ WaitingView: Response:`, JSON.stringify(res));
 
-        if (res?.active) {
-          console.log(`✅ WaitingView: Meeting is active! Company=${res.company}, ID=${res.meeting_id}`);
+        if (res?.active && isMounted) {
           const activeMeetingId = res.meeting_id || meetingId;
-          if (context && activeMeetingId) {
-            context.meeting_id = activeMeetingId;
-            context.meetingUUID = activeMeetingId;
-            saveMeetingId(activeMeetingId);
-            saveMeetingUUID(activeMeetingId);
-          }
-          if (isMounted && onMeetingActiveRef.current) {
-            onMeetingActiveRef.current({
-              id: (res.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
-              name: res.company || 'Meeting',
-              company: res.company,
-              meeting_id: activeMeetingId,
-            });
-          }
-          // Stop polling once active
-          if (timer) clearInterval(timer);
-          return;
-        } else {
-          if (isMounted) {
-            setCheckCount(prev => prev + 1);
-            setStatusMsg('Host has not started yet \u2014 checking again...');
-          }
+          const meetingData = {
+            id: (res.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
+            name: res.company || 'Meeting',
+            company: res.company,
+            meeting_id: activeMeetingId,
+          };
+          setActiveMeetingData(meetingData);
+          setStatusMsg(`Host is active (${res.company || 'Meeting'})`);
+        } else if (isMounted) {
+          setActiveMeetingData(null);
+          setStatusMsg('Host has not started yet — waiting for host to start...');
         }
       } catch (err) {
-        console.warn('⏳ WaitingView: Check error:', err);
-        if (isMounted) {
-          setStatusMsg('Connecting to server...');
-        }
+        if (isMounted) setStatusMsg('Connecting to server...');
       }
     };
 
-    // Check immediately on mount
     checkStatus();
-    // Poll every 3 seconds
     timer = setInterval(checkStatus, 3000);
 
     return () => {
@@ -73,27 +68,97 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     };
   }, [context?.meeting_id]);
 
-  const displayName = (!isGenericName(context?.user_name))
-    ? context.user_name
-    : (localStorage.getItem('mng_user_name') || 'Participant');
+  const handleJoin = (targetData) => {
+    const data = targetData || activeMeetingData;
+    if (!data || isJoining) return;
+    setIsJoining(true);
+
+    const finalName = participantName.trim() || 'Guest User';
+
+    try {
+      localStorage.setItem('mng_participant_user_name', finalName);
+      sessionStorage.setItem('mng_participant_joined', 'true');
+    } catch (_) {}
+
+    if (context) {
+      context.user_name = finalName;
+    }
+
+    if (data.meeting_id) {
+      saveMeetingId(data.meeting_id);
+      saveMeetingUUID(data.meeting_id);
+      if (context) {
+        context.meeting_id = data.meeting_id;
+        context.meetingUUID = data.meeting_id;
+      }
+    }
+
+    if (onMeetingActiveRef.current) {
+      onMeetingActiveRef.current(data, finalName, data.meeting_id);
+    }
+  };
+
+  const isReadyToJoin = !!activeMeetingData;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg-primary)', padding: 24 }}>
-      <div className="spinner spinner--lg" style={{ marginBottom: 20 }} />
-      <h2 style={{ fontSize: 18, color: 'var(--color-text-primary)', marginBottom: 8, textAlign: 'center' }}>
-        Waiting for Host...
-      </h2>
-      <p style={{ fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center', marginBottom: 16, maxWidth: 280, lineHeight: 1.5 }}>
-        {statusMsg}
-      </p>
-      <p style={{ fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center', marginBottom: 24 }}>
-        Joined as: <strong style={{ color: 'var(--color-text-primary)' }}>{displayName}</strong>
-      </p>
-      {onClosePanel && (
-        <button className="btn btn--ghost btn--sm" onClick={onClosePanel}>
-          Close Panel
-        </button>
-      )}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--color-bg-primary)' }}>
+      <div className="app-header">
+        <div className="app-header__left">
+          <div className="app-header__logo">{Icons.bot}</div>
+          <span className="app-header__title">MNG Bot</span>
+        </div>
+        <div className="app-header__right">
+          <span style={{ fontSize: 11, color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            {Icons.user} {participantName.trim() || 'Guest User'}
+          </span>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '24px 16px', overflowY: 'auto' }}>
+        <h2 style={{ fontSize: 18, color: 'var(--color-text-primary)', marginBottom: 6, textAlign: 'center' }}>
+          {isReadyToJoin ? 'Join AI Session 🚀' : 'Waiting for Host... ⏳'}
+        </h2>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center', marginBottom: 24, lineHeight: 1.5 }}>
+          {isReadyToJoin
+            ? `The host has loaded the ${activeMeetingData.name} knowledge base.`
+            : statusMsg}
+        </p>
+
+        <label style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6, display: 'block' }}>
+          Your Display Name
+        </label>
+        <div className="search-input" style={{ marginBottom: 20 }}>
+          <span className="search-input__icon">{Icons.user}</span>
+          <input
+            type="text"
+            placeholder="e.g. Alex Smith"
+            value={participantName}
+            onChange={e => setParticipantName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && isReadyToJoin && handleJoin()}
+          />
+        </div>
+
+        {isReadyToJoin ? (
+          <button
+            className="btn btn--primary btn--lg btn--full"
+            disabled={!participantName.trim() || isJoining}
+            onClick={() => handleJoin()}
+          >
+            {Icons.messageSquare} Join Chat
+          </button>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 12, background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--glass-border)' }}>
+            <div className="spinner spinner--sm" />
+            <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Waiting for host to start...</span>
+          </div>
+        )}
+
+        {onClosePanel && (
+          <button className="btn btn--ghost btn--sm" onClick={onClosePanel} style={{ marginTop: 16 }}>
+            Close Panel
+          </button>
+        )}
+      </div>
     </div>
   );
 }

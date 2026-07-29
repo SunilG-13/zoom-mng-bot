@@ -149,18 +149,23 @@ function AppInner() {
       setCurrentView('chat');
     } else {
       // Participant: SplashView already checked /status endpoint
-      // companyInfo is non-null if meeting is active, null otherwise
-      if (companyInfo) {
-        // Meeting is active → go directly to Chat (no setup, no popup)
-        console.log("✅ Participant: Meeting active → Chat directly");
+      // If detectedRole === 'participant' (already joined in session), go directly to Chat
+      if (detectedRole === 'participant' && companyInfo) {
+        console.log("✅ Participant: Session active & joined → Chat directly");
         setMeetingInfo({
           company: companyInfo.id,
           companyName: companyInfo.name,
         });
         setCurrentView('chat');
       } else {
-        // Meeting not started yet → Waiting View (polls until host starts)
-        console.log("✅ Participant: Meeting not started → Waiting View");
+        // First time joining or meeting not started yet → Waiting/Join View
+        console.log("✅ Participant: Routing to Waiting/Join View");
+        if (companyInfo) {
+          setMeetingInfo({
+            company: companyInfo.id,
+            companyName: companyInfo.name,
+          });
+        }
         setCurrentView('waiting');
       }
     }
@@ -178,7 +183,11 @@ function AppInner() {
       ? hostName
       : (!isGenericName(context?.user_name))
         ? context.user_name
-        : (localStorage.getItem('mng_user_name') || 'Zoom User');
+        : (localStorage.getItem('mng_host_user_name') || 'Host');
+
+    try {
+      localStorage.setItem('mng_host_user_name', resolvedHostName);
+    } catch (_) {}
 
     setIsHost(true);
     setMeetingInfo({ company: company.id, companyName: company.name });
@@ -207,7 +216,12 @@ function AppInner() {
       ? participantName
       : (!isGenericName(context?.user_name))
         ? context.user_name
-        : (localStorage.getItem('mng_user_name') || 'Zoom User');
+        : (localStorage.getItem('mng_participant_user_name') || 'Guest User');
+
+    try {
+      localStorage.setItem('mng_participant_user_name', resolvedParticipantName);
+      sessionStorage.setItem('mng_participant_joined', 'true');
+    } catch (_) {}
 
     setContext(prev => ({
       ...prev,

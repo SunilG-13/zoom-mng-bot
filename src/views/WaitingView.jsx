@@ -7,7 +7,8 @@
    Role selection is handled in SplashView.
    ============================================ */
 import { useEffect, useState, useRef } from 'react';
-import { checkActiveMeeting } from '../api';
+import { checkActiveMeeting, getActiveMeeting } from '../api';
+import { saveMeetingId, saveMeetingUUID } from '../utils/meetingStorage';
 
 export default function WaitingView({ context, onMeetingActive, onClosePanel }) {
   const [statusMsg, setStatusMsg] = useState('Waiting for host to start the AI session...');
@@ -26,17 +27,30 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     const checkStatus = async () => {
       try {
         console.log(`⏳ WaitingView: Checking status for "${meetingId}"...`);
-        const res = await checkActiveMeeting(meetingId);
+        let res = await checkActiveMeeting(meetingId);
+        if (!res?.active) {
+          const discovery = await getActiveMeeting();
+          if (discovery?.active) {
+            res = discovery;
+          }
+        }
         console.log(`⏳ WaitingView: Response:`, JSON.stringify(res));
 
         if (res?.active) {
-          console.log(`✅ WaitingView: Meeting is active! Company=${res.company}`);
+          console.log(`✅ WaitingView: Meeting is active! Company=${res.company}, ID=${res.meeting_id}`);
+          const activeMeetingId = res.meeting_id || meetingId;
+          if (context && activeMeetingId) {
+            context.meeting_id = activeMeetingId;
+            context.meetingUUID = activeMeetingId;
+            saveMeetingId(activeMeetingId);
+            saveMeetingUUID(activeMeetingId);
+          }
           if (isMounted && onMeetingActiveRef.current) {
             onMeetingActiveRef.current({
               id: (res.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
               name: res.company || 'Meeting',
               company: res.company,
-              meeting_id: res.meeting_id || meetingId,
+              meeting_id: activeMeetingId,
             });
           }
           // Stop polling once active

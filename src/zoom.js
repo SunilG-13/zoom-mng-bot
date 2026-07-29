@@ -2,6 +2,7 @@
    MNG Bot — Zoom Apps SDK Integration
    ============================================ */
 import zoomSdk from '@zoom/appssdk';
+import { getLastMeetingId } from './utils/meetingStorage';
 
 let _sdkReady = false;
 let _configResult = null;
@@ -95,6 +96,43 @@ async function _getUserContextWithRetry(maxAttempts = 2) {
 }
 
 /**
+ * Try getMeetingContext / getMeetingUUID with retry logic.
+ */
+async function _getMeetingContextWithRetry(maxAttempts = 3) {
+  let meetingContext = {};
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      meetingContext = await zoomSdk.getMeetingContext();
+      console.log(`📋 getMeetingContext (attempt ${attempt}):`, JSON.stringify(meetingContext));
+      const uuid = meetingContext?.meetingUUID || meetingContext?.meetingID || meetingContext?.meetingId;
+      if (uuid) return meetingContext;
+      
+      // If getMeetingUUID capability is present, try calling it directly
+      if (typeof zoomSdk.getMeetingUUID === 'function') {
+        try {
+          const directUUID = await zoomSdk.getMeetingUUID();
+          if (directUUID) {
+            console.log(`📋 getMeetingUUID direct call (attempt ${attempt}):`, directUUID);
+            const resUUID = typeof directUUID === 'string' ? directUUID : (directUUID?.meetingUUID || directUUID?.meetingId);
+            if (resUUID) {
+              return { ...meetingContext, meetingUUID: resUUID };
+            }
+          }
+        } catch (e) {
+          console.warn(`⚠️ getMeetingUUID direct attempt ${attempt} failed:`, e.message);
+        }
+      }
+
+      if (attempt < maxAttempts) await sleep(500);
+    } catch (e) {
+      console.warn(`⚠️ getMeetingContext attempt ${attempt} failed:`, e.message);
+      if (attempt < maxAttempts) await sleep(500);
+    }
+  }
+  return meetingContext || {};
+}
+
+/**
  * Extract display name from user context.
  */
 function _resolveDisplayName(userContext) {
@@ -126,14 +164,7 @@ export async function getMeetingContext() {
   if (!_sdkReady) return _getFallbackContext();
 
   try {
-    let meetingContext = {};
-    try {
-      meetingContext = await zoomSdk.getMeetingContext();
-      console.log('📋 getMeetingContext:', JSON.stringify(meetingContext));
-    } catch (e) {
-      console.warn('⚠️ getMeetingContext failed:', e.message);
-    }
-
+    const meetingContext = await _getMeetingContextWithRetry(3);
     const userContext = await _getUserContextWithRetry(2);
 
     // Evaluate role from all available SDK fields
@@ -159,7 +190,16 @@ export async function getMeetingContext() {
     }
 
     const displayName = _resolveDisplayName(userContext);
-    const meetingUUID = meetingContext.meetingUUID || meetingContext.meetingID || meetingContext.meetingId || '';
+    let meetingUUID = meetingContext.meetingUUID || meetingContext.meetingID || meetingContext.meetingId || '';
+
+    // If still missing, check stored meeting ID before falling back to timestamp
+    if (!meetingUUID) {
+      const saved = getLastMeetingId();
+      if (saved && !saved.startsWith('fallback-') && !saved.startsWith('mng-') && !saved.startsWith('meeting-')) {
+        meetingUUID = saved;
+        console.log(`📌 Recovered meetingUUID from local storage: ${meetingUUID}`);
+      }
+    }
 
     return {
       meeting_id: meetingUUID || `meeting-${Date.now()}`,

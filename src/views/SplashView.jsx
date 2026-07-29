@@ -51,22 +51,35 @@ export default function SplashView({ onComplete }) {
 
       // Step 3: Check backend active meeting status
       if (!cancelled) setStatusText('Checking meeting status...');
-      const { checkMeetingStatus, CONFIG } = await import('../api');
+      const { checkMeetingStatus, getActiveMeeting, CONFIG } = await import('../api');
 
       let activeMeeting = null;
 
-      // Always use the meeting_id from Zoom SDK — no blind discovery needed
       console.log(`🔍 Splash — meeting_id from Zoom SDK: "${context.meeting_id}"`);
-      if (context.meeting_id && !context.meeting_id.startsWith('fallback-')) {
-        try {
-          const res = await checkMeetingStatus(context.meeting_id);
-          console.log(`🔍 Splash — checkMeetingStatus response:`, JSON.stringify(res));
-          if (res.active && res.meeting_id) activeMeeting = res;
-        } catch (err) {
-          console.warn('🔍 Splash — checkMeetingStatus error:', err);
+      try {
+        const res = await checkMeetingStatus(context.meeting_id);
+        console.log(`🔍 Splash — checkMeetingStatus response:`, JSON.stringify(res));
+        if (res.active && res.meeting_id) {
+          activeMeeting = res;
+        } else {
+          // Fallback: Query /active_meeting discovery endpoint
+          console.log(`🔍 Splash — Attempting /active_meeting discovery...`);
+          const discovery = await getActiveMeeting();
+          if (discovery.active && discovery.meeting_id) {
+            activeMeeting = discovery;
+          }
         }
-      } else {
-        console.warn(`🔍 Splash — Skipping status check: meeting_id is "${context.meeting_id}"`);
+      } catch (err) {
+        console.warn('🔍 Splash — checkMeetingStatus error:', err);
+      }
+
+      // If an active meeting was found, align context meeting_id
+      if (activeMeeting?.meeting_id) {
+        context.meeting_id = activeMeeting.meeting_id;
+        context.meetingUUID = activeMeeting.meeting_id;
+        saveMeetingUUID(activeMeeting.meeting_id);
+        const { saveMeetingId } = await import('../utils/meetingStorage');
+        saveMeetingId(activeMeeting.meeting_id);
       }
 
       // Minimum splash duration for smooth UX

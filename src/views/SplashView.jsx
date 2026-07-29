@@ -61,8 +61,8 @@ export default function SplashView({ onComplete }) {
         console.log(`🔍 Splash — checkMeetingStatus response:`, JSON.stringify(res));
         if (res.active && res.meeting_id) {
           activeMeeting = res;
-        } else {
-          // Fallback: Query /active_meeting discovery endpoint
+        } else if (!context.meeting_id || context.meeting_id.startsWith('fallback-')) {
+          // ONLY query /active_meeting discovery endpoint if no specific meeting_id was provided
           console.log(`🔍 Splash — Attempting /active_meeting discovery...`);
           const discovery = await getActiveMeeting();
           if (discovery.active && discovery.meeting_id) {

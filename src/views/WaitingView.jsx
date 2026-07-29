@@ -33,7 +33,8 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     const checkStatus = async () => {
       try {
         let res = await checkActiveMeeting(meetingId);
-        if (!res?.active) {
+        if (!res?.active && (!meetingId || meetingId.startsWith('fallback-'))) {
+          // Only attempt discovery if no specific meeting ID was provided
           const discovery = await getActiveMeeting();
           if (discovery?.active) {
             res = discovery;

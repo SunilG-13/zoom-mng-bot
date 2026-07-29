@@ -286,10 +286,15 @@ export async function getAllQuestions(meetingId) {
 }
 
 // GET /active_meeting  →  discover any active meeting on backend
-export async function getActiveMeeting() {
+export async function getActiveMeeting(params = {}) {
   if (CONFIG.USE_MOCK_API) return { success: true, active: false, meeting_id: null, company: null };
   try {
-    const data = await _fetch('GET', '/active_meeting');
+    const query = new URLSearchParams();
+    if (params.meeting_id) query.append('meeting_id', params.meeting_id);
+    if (params.company) query.append('company', params.company);
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+
+    const data = await _fetch('GET', `/active_meeting${queryString}`);
     console.log('🔍 getActiveMeeting response:', JSON.stringify(data));
     const isActive = !!(data && (data.active === true || data.status === true));
     return {
@@ -310,16 +315,13 @@ export async function checkAnyActiveMeeting() {
 }
 
 // GET /status/{meeting_id}  →  check if meeting is active on backend
-// Uses the dedicated /status endpoint with fallback to /active_meeting discovery
 export async function checkActiveMeeting(meetingId) {
   if (CONFIG.USE_MOCK_API) return MockApi.checkMeetingStatus(meetingId);
   const targetId = meetingId || getLastMeetingId();
   
-  const isFallbackId = !targetId || targetId.startsWith('fallback-') || targetId.startsWith('meeting-') || targetId.startsWith('mng-');
-
-  if (!isFallbackId) {
+  if (targetId) {
     try {
-      const data = await _fetch('GET', `/status/${targetId}`);
+      const data = await _fetch('GET', `/status/${encodeURIComponent(targetId)}`);
       console.log('📡 checkActiveMeeting response:', JSON.stringify(data));
       let isActive = false;
       if (data.status === true) {
@@ -334,6 +336,7 @@ export async function checkActiveMeeting(meetingId) {
           active: true,
           company: data.company || null,
           meeting_id: data.meeting_id || targetId,
+          host_name: data.host_name || null,
         };
       }
     } catch (err) {
@@ -341,12 +344,14 @@ export async function checkActiveMeeting(meetingId) {
     }
   }
 
-  // Fallback: Query /active_meeting to discover active meeting if ID mismatch or fallback
-  console.log('🔍 Falling back to /active_meeting discovery...');
-  const activeDiscovery = await getActiveMeeting();
-  if (activeDiscovery.active) {
-    console.log('🎯 Active meeting discovered via backend:', activeDiscovery.meeting_id);
-    return activeDiscovery;
+  // Fallback: ONLY query /active_meeting discovery if NO targetId was provided
+  if (!targetId) {
+    console.log('🔍 Falling back to /active_meeting discovery (no targetId)...');
+    const activeDiscovery = await getActiveMeeting();
+    if (activeDiscovery.active) {
+      console.log('🎯 Active meeting discovered via backend:', activeDiscovery.meeting_id);
+      return activeDiscovery;
+    }
   }
 
   return { success: true, active: false, meeting_id: targetId };

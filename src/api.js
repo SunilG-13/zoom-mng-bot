@@ -264,10 +264,17 @@ export async function checkActiveMeeting(meetingId) {
 
   try {
     const data = await _fetch('GET', `/status/${targetId}`);
-    // Be explicit: only treat status=true or status="active" as active.
-    // A status like "ended" or any other non-active string must NOT be treated as active.
-    const isActive = data.status === true || data.status === 'active'
-      || (typeof data.status === 'string' && data.status.toLowerCase() === 'active');
+    console.log('📡 checkActiveMeeting response:', JSON.stringify(data));
+    // Defensive: handle boolean true, string "true"/"True", string "active"
+    // The backend returns status as a boolean, but proxies/serialization may convert it
+    let isActive = false;
+    if (data.status === true) {
+      isActive = true;
+    } else if (typeof data.status === 'string') {
+      const lower = data.status.toLowerCase().trim();
+      isActive = lower === 'true' || lower === 'active';
+    }
+    console.log(`📡 Meeting ${targetId} active=${isActive}, company=${data.company}`);
     return {
       success: true,
       active: isActive,
@@ -275,6 +282,7 @@ export async function checkActiveMeeting(meetingId) {
       meeting_id: data.meeting_id || targetId,
     };
   } catch (err) {
+    console.warn('📡 checkActiveMeeting error:', err.message);
     return { success: true, active: false, meeting_id: targetId };
   }
 }

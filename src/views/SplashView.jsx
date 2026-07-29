@@ -56,11 +56,17 @@ export default function SplashView({ onComplete }) {
       let activeMeeting = null;
 
       // Always use the meeting_id from Zoom SDK — no blind discovery needed
+      console.log(`🔍 Splash — meeting_id from Zoom SDK: "${context.meeting_id}"`);
       if (context.meeting_id && !context.meeting_id.startsWith('fallback-')) {
         try {
           const res = await checkMeetingStatus(context.meeting_id);
+          console.log(`🔍 Splash — checkMeetingStatus response:`, JSON.stringify(res));
           if (res.active && res.meeting_id) activeMeeting = res;
-        } catch (_) {}
+        } catch (err) {
+          console.warn('🔍 Splash — checkMeetingStatus error:', err);
+        }
+      } else {
+        console.warn(`🔍 Splash — Skipping status check: meeting_id is "${context.meeting_id}"`);
       }
 
       // Minimum splash duration for smooth UX

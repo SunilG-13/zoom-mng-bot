@@ -6,51 +6,66 @@
    Clean UI — no host override buttons.
    Role selection is handled in SplashView.
    ============================================ */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { checkActiveMeeting } from '../api';
 
 export default function WaitingView({ context, onMeetingActive, onClosePanel }) {
   const [statusMsg, setStatusMsg] = useState('Waiting for host to start the AI session...');
+  const [checkCount, setCheckCount] = useState(0);
+  // Use ref for onMeetingActive to avoid re-running effect when callback reference changes
+  const onMeetingActiveRef = useRef(onMeetingActive);
+  onMeetingActiveRef.current = onMeetingActive;
 
   useEffect(() => {
     let isMounted = true;
     let timer = null;
 
+    const meetingId = context?.meeting_id;
+    console.log(`⏳ WaitingView: Polling for meeting_id="${meetingId}"`);
+
     const checkStatus = async () => {
       try {
-        // Always use the meeting_id from Zoom SDK — no blind discovery needed
-        const res = await checkActiveMeeting(context?.meeting_id);
+        console.log(`⏳ WaitingView: Checking status for "${meetingId}"...`);
+        const res = await checkActiveMeeting(meetingId);
+        console.log(`⏳ WaitingView: Response:`, JSON.stringify(res));
 
         if (res?.active) {
-          if (isMounted && onMeetingActive) {
-            onMeetingActive({
+          console.log(`✅ WaitingView: Meeting is active! Company=${res.company}`);
+          if (isMounted && onMeetingActiveRef.current) {
+            onMeetingActiveRef.current({
               id: (res.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
               name: res.company || 'Meeting',
               company: res.company,
-              meeting_id: res.meeting_id || context?.meeting_id,
+              meeting_id: res.meeting_id || meetingId,
             });
           }
+          // Stop polling once active
+          if (timer) clearInterval(timer);
           return;
         } else {
           if (isMounted) {
-            setStatusMsg('Host has not started yet — checking again...');
+            setCheckCount(prev => prev + 1);
+            setStatusMsg('Host has not started yet \u2014 checking again...');
           }
         }
-      } catch {
+      } catch (err) {
+        console.warn('⏳ WaitingView: Check error:', err);
         if (isMounted) {
           setStatusMsg('Connecting to server...');
         }
       }
     };
 
+    // Check immediately on mount
     checkStatus();
-    timer = setInterval(checkStatus, 2000);
+    // Poll every 3 seconds
+    timer = setInterval(checkStatus, 3000);
 
     return () => {
       isMounted = false;
       if (timer) clearInterval(timer);
     };
-  }, [context, onMeetingActive]);
+  }, [context?.meeting_id]);
 
   const displayName = context?.user_name || 'Participant';
 

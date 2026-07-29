@@ -152,13 +152,14 @@ export async function startMeeting(meetingId, company, hostName = 'Host') {
 
 // POST /ask  →  { question, session_id, meeting_id, participant_id, user_name, username, user_role }
 export async function askQuestion(meetingId, sessionId, userName, question, userRole = 'USER', participantId = null, companyName = 'Biocon') {
-  if (isGenericName(userName)) {
+  let resolvedName = userName;
+  if (isGenericName(resolvedName)) {
     try {
       const saved = localStorage.getItem('mng_user_name');
-      if (!isGenericName(saved)) userName = saved.trim();
+      if (saved && saved.trim()) resolvedName = saved.trim();
     } catch {}
   }
-  const finalUserName = (!isGenericName(userName)) ? userName.trim() : 'Unknown User';
+  const finalUserName = (resolvedName && resolvedName.trim()) ? resolvedName.trim() : 'Zoom User';
 
   if (CONFIG.USE_MOCK_API) return MockApi.askQuestion(meetingId, sessionId, finalUserName, question, userRole, participantId);
   const pId = participantId || sessionId;
@@ -183,7 +184,7 @@ export async function askQuestion(meetingId, sessionId, userName, question, user
       console.warn('⚠️ Meeting ID not registered on backend. Auto-starting meeting and retrying ask...');
       try {
         const cleanCo = sanitizeCompany(companyName);
-        const startRes = await startMeeting(targetMeetingId, cleanCo, userName);
+        const startRes = await startMeeting(targetMeetingId, cleanCo, finalUserName);
         if (startRes?.meeting_id) {
           targetMeetingId = startRes.meeting_id;
         }
@@ -223,15 +224,21 @@ export async function getParticipantQuestions(meetingId, participantId, sessionI
     const rawList = data?.questions || data?.data || [];
     const questions = rawList
       .filter(q => !pid || q.participant_id === pid || q.session_id === pid || q.user_name === pid || q.username === pid)
-      .map(q => ({
-        ...q,
-        user_name: q.user_name || q.username || 'Unknown User',
-        username: q.user_name || q.username || 'Unknown User',
-        question: q.question || q.text || '',
-        answer: q.answer || q.response || q.text_answer || '',
-        timestamp: q.timestamp || q.created_at || new Date().toISOString(),
-        status: normalizeStatus(q.status),
-      }));
+      .map(q => {
+        const rawName = q.user_name || q.username || q.userName;
+        const resolvedName = (rawName && rawName !== 'Unknown User' && rawName.trim())
+          ? rawName.trim()
+          : (localStorage.getItem('mng_user_name') || 'Zoom User');
+        return {
+          ...q,
+          user_name: resolvedName,
+          username: resolvedName,
+          question: q.question || q.text || '',
+          answer: q.answer || q.response || q.text_answer || '',
+          timestamp: q.timestamp || q.created_at || new Date().toISOString(),
+          status: normalizeStatus(q.status),
+        };
+      });
     return { questions };
   } catch (err) {
     return { questions: [] };
@@ -259,16 +266,22 @@ export async function getAllQuestions(meetingId) {
   // Normalize to { questions: [...] } so the dashboard always works
   const rawList = data?.questions || data?.data || [];
   const questions = rawList
-    .map(q => ({
-      ...q,
-      // normalize field names (backend may use user_name or username)
-      user_name:  q.user_name  || q.username   || q.userName || 'Unknown User',
-      username:   q.user_name  || q.username   || q.userName || 'Unknown User',
-      question:   q.question   || q.text        || '',
-      answer:     q.answer     || q.response    || q.text_answer || '',
-      timestamp:  q.timestamp  || q.created_at  || q.time || new Date().toISOString(),
-      status: normalizeStatus(q.status),
-    }));
+    .map(q => {
+      const rawName = q.user_name || q.username || q.userName;
+      const resolvedName = (rawName && rawName !== 'Unknown User' && rawName.trim())
+        ? rawName.trim()
+        : (localStorage.getItem('mng_user_name') || 'Zoom User');
+      return {
+        ...q,
+        // normalize field names (backend may use user_name or username)
+        user_name:  resolvedName,
+        username:   resolvedName,
+        question:   q.question   || q.text        || '',
+        answer:     q.answer     || q.response    || q.text_answer || '',
+        timestamp:  q.timestamp  || q.created_at  || q.time || new Date().toISOString(),
+        status: normalizeStatus(q.status),
+      };
+    });
   return { questions, total: data?.total_questions ?? questions.length };
 }
 

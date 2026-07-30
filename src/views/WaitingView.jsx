@@ -41,18 +41,22 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     const meetingId = context?.meeting_id;
     console.log(`⏳ WaitingView: Polling for meeting_id="${meetingId}"`);
 
-    const checkStatus = async () => {
+    const checkStatus = async (showToast = false) => {
       try {
         let res = null;
-        if (meetingId) {
+        const targetId = meetingId || getLastMeetingId();
+        
+        // 1. Check by target ID first
+        if (targetId) {
           try {
-            res = await checkMeetingStatusById(meetingId);
+            res = await checkMeetingStatusById(targetId);
           } catch (_) {}
         }
 
+        // 2. If not active by ID, perform unconstrained /active_meeting discovery
         if (!res?.active) {
           try {
-            const discovery = await getActiveMeeting({ meeting_id: meetingId });
+            const discovery = await getActiveMeeting();
             if (discovery?.active) {
               res = discovery;
             }
@@ -60,7 +64,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
         }
 
         if (res?.active && isMounted) {
-          const activeMeetingId = res.meeting_id || meetingId;
+          const activeMeetingId = res.meeting_id || targetId;
           const meetingData = {
             id: (res.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
             name: res.company || 'Meeting',
@@ -70,15 +74,13 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
           setActiveMeetingData(meetingData);
           setStatusMsg(`Host is active (${res.company || 'Meeting'})`);
 
-          // Auto-join: once the meeting becomes active, join automatically
-          // after a brief delay to let the user see the status change
           if (timer) clearInterval(timer);
           timer = null;
           setTimeout(() => {
             if (isMounted) {
               autoJoin(meetingData);
             }
-          }, 800);
+          }, 500);
         } else if (isMounted) {
           setActiveMeetingData(null);
           setStatusMsg('Host has not started yet — waiting for host to start...');
@@ -89,7 +91,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     };
 
     checkStatus();
-    timer = setInterval(checkStatus, 3000);
+    timer = setInterval(() => checkStatus(), 3000);
 
     return () => {
       isMounted = false;
@@ -178,9 +180,29 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
             <span style={{ fontSize: 13, color: 'var(--color-success)' }}>Joining {activeMeetingData.name} session...</span>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 12, background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--glass-border)' }}>
-            <div className="spinner spinner--sm" />
-            <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Waiting for host to start...</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 12, background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--glass-border)' }}>
+              <div className="spinner spinner--sm" />
+              <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Waiting for host to start...</span>
+            </div>
+            <button
+              className="btn btn--secondary btn--sm btn--full"
+              onClick={async () => {
+                const { getActiveMeeting } = await import('../api');
+                const discovery = await getActiveMeeting();
+                if (discovery?.active) {
+                  autoJoin({
+                    id: (discovery.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
+                    name: discovery.company || 'Meeting',
+                    company: discovery.company,
+                    meeting_id: discovery.meeting_id,
+                  });
+                }
+              }}
+              style={{ fontSize: 12 }}
+            >
+              🔄 Check Host Status Now
+            </button>
           </div>
         )}
 

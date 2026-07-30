@@ -64,7 +64,7 @@ export default function SplashView({ onComplete }) {
 
       // Step 3: Check if THIS meeting is active on backend
       if (!cancelled) setStatusText('Checking meeting status...');
-      const { checkMeetingStatusById, getActiveMeeting, CONFIG } = await import('../api');
+      const { checkMeetingStatusById, CONFIG } = await import('../api');
 
       let activeMeeting = null;
       const meetingId = context.meeting_id;
@@ -80,19 +80,12 @@ export default function SplashView({ onComplete }) {
         }
       }
 
+      // STRICT ISOLATION: Do NOT fall back to getActiveMeeting() discovery.
+      // If the participant's meeting_id is not registered on backend, it means
+      // the host hasn't started THIS meeting yet — go to WaitingView.
+      // Falling back to discovery would risk connecting to a DIFFERENT meeting.
       if (!activeMeeting) {
-        console.log('🔍 Splash — Meeting not found by exact ID, trying /active_meeting discovery...');
-        try {
-          const discovery = await getActiveMeeting({ meeting_id: meetingId });
-          console.log(`🔍 Splash — getActiveMeeting response:`, JSON.stringify(discovery));
-          if (discovery.active && discovery.meeting_id) {
-            activeMeeting = discovery;
-            context.meeting_id = discovery.meeting_id;
-            context.meetingUUID = discovery.meeting_id;
-          }
-        } catch (err) {
-          console.warn('🔍 Splash — getActiveMeeting error:', err);
-        }
+        console.log(`🔍 Splash — Meeting [${meetingId}] not active on backend. Participant will wait for host.`);
       }
 
       // Step 3b: FALLBACK — direct relay query when prior strategies failed
@@ -192,7 +185,7 @@ export default function SplashView({ onComplete }) {
 
     if (!selectedRoleIsHost && !activeMeeting) {
       // User said "I am a Participant" — check if meeting started
-      const { checkMeetingStatusById, getActiveMeeting } = await import('../api');
+      const { checkMeetingStatusById } = await import('../api');
       const meetingId = context.meeting_id;
 
       if (meetingId) {
@@ -204,15 +197,10 @@ export default function SplashView({ onComplete }) {
         } catch (_) {}
       }
 
+      // STRICT ISOLATION: Do NOT fall back to getActiveMeeting() discovery.
+      // If the participant's meeting is not active, they go to WaitingView.
       if (!activeMeeting) {
-        try {
-          const discovery = await getActiveMeeting({ meeting_id: meetingId });
-          if (discovery.active && discovery.meeting_id) {
-            context.meeting_id = discovery.meeting_id;
-            context.meetingUUID = discovery.meeting_id;
-            activeMeeting = discovery;
-          }
-        } catch (_) {}
+        console.log(`🔍 Splash (manual) — Meeting [${meetingId}] not active. Participant will wait for host.`);
       }
     }
 

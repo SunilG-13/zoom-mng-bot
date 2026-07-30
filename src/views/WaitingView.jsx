@@ -2,14 +2,14 @@
    MNG Bot — Waiting View
    
    Shows when participant opens bot before host has started.
-   Polls /active_meeting until the host starts the meeting.
+   Polls /status/{meeting_id} and relay until the host starts.
    Once active → auto-joins the participant.
    
-   KEY: Participants usually don't have a real backend meeting_id yet,
-   so we use /active_meeting discovery as the PRIMARY check.
+   STRICT ISOLATION: Only checks THIS participant's meeting_id.
+   Never falls back to discovery to prevent cross-contamination.
    ============================================ */
 import { useEffect, useState, useRef } from 'react';
-import { checkMeetingStatusById, getActiveMeeting } from '../api';
+import { checkMeetingStatusById } from '../api';
 import { saveMeetingId, saveMeetingUUID, isGenericName, getLastMeetingId } from '../utils/meetingStorage';
 import { Icons } from '../components/Icons';
 
@@ -55,16 +55,21 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
           }
         }
 
-        // Strategy 2: Try relay + discovery with meeting_id for multi-meeting isolation
-        if (!res?.active) {
+        // Strategy 2: Try relay lookup for THIS specific meeting_id only
+        // STRICT ISOLATION: Do NOT use getActiveMeeting() discovery —
+        // it could return a DIFFERENT meeting (e.g., Biocon when we need Pfizer)
+        if (!res?.active && meetingId) {
           try {
-            const discovery = await getActiveMeeting({ meeting_id: meetingId });
-            console.log(`⏳ WaitingView: getActiveMeeting() =>`, JSON.stringify(discovery));
-            if (discovery?.active) {
-              res = discovery;
+            const relayRes = await fetch(`/relay/meeting?meeting_id=${encodeURIComponent(meetingId)}`);
+            if (relayRes.ok) {
+              const relayData = await relayRes.json();
+              console.log(`⏳ WaitingView: relay lookup for [${meetingId}] =>`, JSON.stringify(relayData));
+              if (relayData?.active && relayData.meeting_id) {
+                res = relayData;
+              }
             }
           } catch (e) {
-            console.warn('⏳ WaitingView: getActiveMeeting error:', e.message);
+            console.warn('⏳ WaitingView: relay lookup error:', e.message);
           }
         }
 
@@ -227,10 +232,44 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
             <button
               className="btn btn--secondary btn--sm btn--full"
               onClick={async () => {
+                // STRICT ISOLATION: Only check THIS meeting_id via relay, not discovery
+                const meetingId = context?.meeting_id;
+                
+                if (meetingId) {
+                  try {
+                    const res = await checkMeetingStatusById(meetingId);
+                    if (res?.active) {
+                      autoJoin({
+                        id: (res.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
+                        name: res.company || 'Meeting',
+                        company: res.company,
+                        meeting_id: res.meeting_id || meetingId,
+                      });
+                      return;
+                    }
+                  } catch (_) {}
+                  // Also try relay lookup
+                  try {
+                    const relayRes = await fetch(`/relay/meeting?meeting_id=${encodeURIComponent(meetingId)}`);
+                    if (relayRes.ok) {
+                      const relayData = await relayRes.json();
+                      if (relayData?.active) {
+                        autoJoin({
+                          id: (relayData.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
+                          name: relayData.company || 'Meeting',
+                          company: relayData.company,
+                          meeting_id: relayData.meeting_id,
+                        });
+                        return;
+                      }
+                    }
+                  } catch (_) {}
+                }
+
+                // Fallback using getActiveMeeting for browser mode (no context.meeting_id)
                 const { getActiveMeeting } = await import('../api');
                 let discovery = await getActiveMeeting({ meeting_id: context?.meeting_id });
                 
-                // If getActiveMeeting failed, try direct relay fallback
                 if (!discovery?.active) {
                   try {
                     const relayRes = await fetch('/relay/meeting');

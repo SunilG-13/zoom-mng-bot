@@ -422,8 +422,11 @@ export async function getActiveMeeting(params = {}) {
           return { success: true, active: false, meeting_id: callerMeetingId, company: null };
         }
 
+        // STRICT ISOLATION: Only return a meeting if caller has NO meeting_id at all
+        // (browser testing mode). If caller has a meeting_id that didn't match,
+        // they belong to a different meeting — do NOT cross-contaminate.
         // Caller has NO real ID (fallback) — safe to return if ONLY ONE meeting exists
-        if (meetings.length === 1) {
+        if (!callerMeetingId && meetings.length === 1) {
           const only = meetings[0];
           try {
             const verify = await _fetch('GET', `/status/${encodeURIComponent(only.meeting_id)}`);
@@ -440,6 +443,9 @@ export async function getActiveMeeting(params = {}) {
         // MULTIPLE meetings exist + caller has no real ID → REFUSE to pick one
         // This prevents mixing Biocon and Pfizer data
         console.warn(`🔍 getActiveMeeting: ${meetings.length} meetings active but caller has no real meeting_id — cannot determine which meeting to join`);
+        if (callerMeetingId) {
+          console.log(`📡 getActiveMeeting: caller meeting_id [${callerMeetingId}] not found in ${meetings.length} relay meeting(s) — refusing to guess`);
+        }
         return { success: true, active: false, meeting_id: null, company: null, multiple_meetings: true, meetings_count: meetings.length };
       }
     }

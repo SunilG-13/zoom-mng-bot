@@ -10,7 +10,7 @@
    This prevents cross-meeting hijacking in multi-meeting scenarios.
    ============================================ */
 import { useEffect, useState, useRef } from 'react';
-import { checkMeetingStatusById } from '../api';
+import { checkMeetingStatusById, getActiveMeeting } from '../api';
 import { saveMeetingId, saveMeetingUUID, isGenericName } from '../utils/meetingStorage';
 import { Icons } from '../components/Icons';
 
@@ -43,8 +43,24 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
 
     const checkStatus = async () => {
       try {
-        // ONLY check this specific meeting — no generic discovery
-        const res = await checkMeetingStatusById(meetingId);
+        const isRealMeetingId = meetingId && 
+          !meetingId.startsWith('fallback-') && 
+          !meetingId.startsWith('meeting-') && 
+          !meetingId.startsWith('mng-');
+
+        let res = null;
+        if (isRealMeetingId) {
+          res = await checkMeetingStatusById(meetingId);
+        } else {
+          // If no real meeting ID, fallback to /active_meeting discovery
+          res = await checkMeetingStatusById(meetingId);
+          if (!res?.active) {
+            const discovery = await getActiveMeeting();
+            if (discovery?.active) {
+              res = discovery;
+            }
+          }
+        }
 
         if (res?.active && isMounted) {
           const activeMeetingId = res.meeting_id || meetingId;

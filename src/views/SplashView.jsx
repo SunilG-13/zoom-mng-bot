@@ -62,10 +62,9 @@ export default function SplashView({ onComplete }) {
         saveMeetingUUID(context.meetingUUID);
       }
 
-      // Step 3: Check if THIS SPECIFIC meeting is active on backend
-      // Use checkMeetingStatusById — NO generic /active_meeting discovery
+      // Step 3: Check if THIS meeting is active on backend
       if (!cancelled) setStatusText('Checking meeting status...');
-      const { checkMeetingStatusById, CONFIG } = await import('../api');
+      const { checkMeetingStatusById, getActiveMeeting, CONFIG } = await import('../api');
 
       let activeMeeting = null;
       const meetingId = context.meeting_id;
@@ -77,6 +76,7 @@ export default function SplashView({ onComplete }) {
       console.log(`🔍 Splash — meeting_id from Zoom SDK: "${meetingId}", isReal: ${isRealMeetingId}`);
 
       if (isRealMeetingId) {
+        // Real Zoom meeting_id → check ONLY this specific meeting (multi-meeting safe)
         try {
           const res = await checkMeetingStatusById(meetingId);
           console.log(`🔍 Splash — checkMeetingStatusById response:`, JSON.stringify(res));
@@ -85,6 +85,22 @@ export default function SplashView({ onComplete }) {
           }
         } catch (err) {
           console.warn('🔍 Splash — checkMeetingStatusById error:', err);
+        }
+      } else {
+        // No real meeting_id (browser mode / SDK failure) → use /active_meeting discovery
+        // This works when there's 1 active meeting; with multiple it returns active:false
+        console.log('🔍 Splash — No real meeting_id, trying /active_meeting discovery...');
+        try {
+          const discovery = await getActiveMeeting();
+          console.log(`🔍 Splash — getActiveMeeting response:`, JSON.stringify(discovery));
+          if (discovery.active && discovery.meeting_id) {
+            activeMeeting = discovery;
+            // Update context with the discovered meeting_id
+            context.meeting_id = discovery.meeting_id;
+            context.meetingUUID = discovery.meeting_id;
+          }
+        } catch (err) {
+          console.warn('🔍 Splash — getActiveMeeting error:', err);
         }
       }
 
@@ -152,7 +168,7 @@ export default function SplashView({ onComplete }) {
 
     if (!selectedRoleIsHost) {
       // User said "I am a Participant" — check once more if meeting started in the meantime
-      const { checkMeetingStatusById } = await import('../api');
+      const { checkMeetingStatusById, getActiveMeeting } = await import('../api');
       const meetingId = context.meeting_id;
       const isRealMeetingId = meetingId && 
         !meetingId.startsWith('fallback-') && 
@@ -163,8 +179,18 @@ export default function SplashView({ onComplete }) {
         try {
           const res = await checkMeetingStatusById(meetingId);
           if (res.active && res.meeting_id) {
-            // Meeting is now active — route participant with meeting data
             routeUser(false, res, context);
+            return;
+          }
+        } catch (_) {}
+      } else {
+        // No real meeting_id → try discovery
+        try {
+          const discovery = await getActiveMeeting();
+          if (discovery.active && discovery.meeting_id) {
+            context.meeting_id = discovery.meeting_id;
+            context.meetingUUID = discovery.meeting_id;
+            routeUser(false, discovery, context);
             return;
           }
         } catch (_) {}

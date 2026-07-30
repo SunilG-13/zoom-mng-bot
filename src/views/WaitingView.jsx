@@ -45,8 +45,8 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
       try {
         let res = null;
 
-        // Strategy 1: If we have a REAL meeting_id (not a fallback), check it directly
-        if (!isFallbackId) {
+        // Strategy 1: Check by exact meetingId
+        if (meetingId) {
           try {
             res = await checkMeetingStatusById(meetingId);
             console.log(`⏳ WaitingView: checkMeetingStatusById("${meetingId}") =>`, JSON.stringify(res));
@@ -55,7 +55,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
           }
         }
 
-        // Strategy 2: Try relay + discovery with meeting_id for multi-meeting isolation
+        // Strategy 2: Try getActiveMeeting with meeting_id for matching
         if (!res?.active) {
           try {
             const discovery = await getActiveMeeting({ meeting_id: meetingId });
@@ -68,32 +68,21 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
           }
         }
 
-        // Strategy 3: FALLBACK — direct /relay/meeting query
-        // Handles the case where meetingId doesn't match relay entries exactly
-        if (!res?.active) {
+        // Strategy 3: Check relay with fuzzy matching against meetingId
+        if (!res?.active && meetingId) {
           try {
             const relayRes = await fetch('/relay/meeting');
             if (relayRes.ok) {
               const relayData = await relayRes.json();
               const meetings = relayData.meetings || [];
-              console.log(`⏳ WaitingView: Direct relay fallback: ${meetings.length} meeting(s)`);
-
-              if (meetings.length === 1) {
-                // Single meeting — safe to use it
-                const only = meetings[0];
-                res = { active: true, meeting_id: only.meeting_id, company: only.company, host_name: only.host_name };
-                console.log(`⏳ WaitingView: Single relay meeting → ${only.company}`);
-              } else if (meetings.length > 1 && meetingId) {
-                // Multiple meetings — try fuzzy match
-                const match = meetings.find(m =>
-                  m.meeting_id === meetingId ||
-                  m.zoom_meeting_id === meetingId ||
-                  (m.meeting_id && meetingId && (m.meeting_id.includes(meetingId) || meetingId.includes(m.meeting_id)))
-                );
-                if (match) {
-                  res = { active: true, meeting_id: match.meeting_id, company: match.company, host_name: match.host_name };
-                  console.log(`⏳ WaitingView: Fuzzy relay match → ${match.company}`);
-                }
+              const match = meetings.find(m =>
+                m.meeting_id === meetingId ||
+                m.zoom_meeting_id === meetingId ||
+                (m.meeting_id && meetingId && (m.meeting_id.includes(meetingId) || meetingId.includes(m.meeting_id)))
+              );
+              if (match) {
+                res = { active: true, meeting_id: match.meeting_id, company: match.company, host_name: match.host_name };
+                console.log(`⏳ WaitingView: Fuzzy relay match → ${match.company}`);
               }
             }
           } catch (e) {
@@ -230,25 +219,19 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
                 const { getActiveMeeting } = await import('../api');
                 let discovery = await getActiveMeeting({ meeting_id: context?.meeting_id });
                 
-                // If getActiveMeeting failed, try direct relay fallback
-                if (!discovery?.active) {
+                if (!discovery?.active && context?.meeting_id) {
                   try {
                     const relayRes = await fetch('/relay/meeting');
                     if (relayRes.ok) {
                       const relayData = await relayRes.json();
                       const meetings = relayData.meetings || [];
-                      if (meetings.length === 1) {
-                        const only = meetings[0];
-                        discovery = { active: true, meeting_id: only.meeting_id, company: only.company };
-                      } else if (meetings.length > 1 && context?.meeting_id) {
-                        const myId = context.meeting_id;
-                        const match = meetings.find(m =>
-                          m.meeting_id === myId || m.zoom_meeting_id === myId ||
-                          (m.meeting_id && myId && (m.meeting_id.includes(myId) || myId.includes(m.meeting_id)))
-                        );
-                        if (match) {
-                          discovery = { active: true, meeting_id: match.meeting_id, company: match.company };
-                        }
+                      const myId = context.meeting_id;
+                      const match = meetings.find(m =>
+                        m.meeting_id === myId || m.zoom_meeting_id === myId ||
+                        (m.meeting_id && myId && (m.meeting_id.includes(myId) || myId.includes(m.meeting_id)))
+                      );
+                      if (match) {
+                        discovery = { active: true, meeting_id: match.meeting_id, company: match.company };
                       }
                     }
                   } catch (_) {}

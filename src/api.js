@@ -356,15 +356,9 @@ export async function getActiveMeeting(params = {}) {
   if (CONFIG.USE_MOCK_API) return { success: true, active: false, meeting_id: null, company: null };
 
   const callerMeetingId = params.meeting_id || null;
-  const isFallbackId = !callerMeetingId ||
-    callerMeetingId.startsWith('fallback-') ||
-    callerMeetingId.startsWith('mng_') ||
-    callerMeetingId.startsWith('mng-') ||
-    callerMeetingId.startsWith('browser_') ||
-    callerMeetingId.startsWith('meeting-');
 
-  // ── Strategy 1: Relay lookup by specific meeting_id (uses fuzzy matching) ──
-  if (callerMeetingId && !isFallbackId) {
+  // ── Strategy 1: Relay lookup by specific meeting_id (uses fuzzy matching for same meeting) ──
+  if (callerMeetingId) {
     try {
       const relayRes = await fetch(`/relay/meeting?meeting_id=${encodeURIComponent(callerMeetingId)}`);
       if (relayRes.ok) {
@@ -394,8 +388,8 @@ export async function getActiveMeeting(params = {}) {
       console.log(`🔍 getActiveMeeting(relay, all): ${meetings.length} meeting(s)`);
 
       if (meetings.length > 0) {
-        // If caller has a REAL meeting_id, try to match against the list
-        if (callerMeetingId && !isFallbackId) {
+        if (callerMeetingId) {
+          // If caller specified a meeting_id, ONLY match an entry for that ID
           const match = meetings.find(m =>
             m.meeting_id === callerMeetingId ||
             m.zoom_meeting_id === callerMeetingId ||
@@ -403,7 +397,6 @@ export async function getActiveMeeting(params = {}) {
             (callerMeetingId && callerMeetingId.includes(m.meeting_id))
           );
           if (match) {
-            // Verify with backend before returning
             try {
               const verify = await _fetch('GET', `/status/${encodeURIComponent(match.meeting_id)}`);
               if (verify.status === true || verify.status === 'active' || verify.status === 'Active') {
@@ -412,62 +405,47 @@ export async function getActiveMeeting(params = {}) {
                 _clearMeetingRelay(match.meeting_id);
               }
             } catch (_) {
-              // Backend unreachable — trust relay
               return { success: true, active: true, ...match };
             }
           }
-          // Caller has a real ID but it doesn't match ANY relay entry → return NOT ACTIVE
-          // Do NOT fall through to returning a random meeting!
-          console.log(`🔍 getActiveMeeting: Caller ID ${callerMeetingId} doesn't match any of ${meetings.length} relay meeting(s) — refusing to return wrong meeting`);
+          // Caller passed a meeting_id but it DOES NOT match any active relay meeting!
+          // Strictly return NOT ACTIVE for this meeting. Never hijack another meeting!
+          console.log(`🔍 getActiveMeeting: Caller ID "${callerMeetingId}" does not match any active meeting.`);
           return { success: true, active: false, meeting_id: callerMeetingId, company: null };
-        }
-
-        // Caller has NO real ID (fallback) — safe to return if ONLY ONE meeting exists
-        if (meetings.length === 1) {
-          const only = meetings[0];
-          try {
-            const verify = await _fetch('GET', `/status/${encodeURIComponent(only.meeting_id)}`);
-            if (verify.status === true || verify.status === 'active' || verify.status === 'Active') {
-              return { success: true, active: true, meeting_id: only.meeting_id, company: only.company || verify.company, host_name: only.host_name || verify.host_name };
-            } else {
-              _clearMeetingRelay(only.meeting_id);
+        } else {
+          // No meeting_id provided at all — return single meeting if only one exists
+          if (meetings.length === 1) {
+            const only = meetings[0];
+            try {
+              const verify = await _fetch('GET', `/status/${encodeURIComponent(only.meeting_id)}`);
+              if (verify.status === true || verify.status === 'active' || verify.status === 'Active') {
+                return { success: true, active: true, meeting_id: only.meeting_id, company: only.company || verify.company, host_name: only.host_name || verify.host_name };
+              } else {
+                _clearMeetingRelay(only.meeting_id);
+              }
+            } catch (e) {
+              return { success: true, active: true, ...only };
             }
-          } catch (e) {
-            return { success: true, active: true, ...only };
           }
         }
-
-        // MULTIPLE meetings exist + caller has no real ID → REFUSE to pick one
-        // This prevents mixing Biocon and Pfizer data
-        console.warn(`🔍 getActiveMeeting: ${meetings.length} meetings active but caller has no real meeting_id — cannot determine which meeting to join`);
-        return { success: true, active: false, meeting_id: null, company: null, multiple_meetings: true, meetings_count: meetings.length };
       }
     }
   } catch (e) {
     console.warn('📡 Relay all-meetings lookup failed:', e.message);
   }
 
-  // ── Strategy 3: Backend endpoints as last fallback ──
-  const endpoints = ['/active_meeting', '/status'];
-  for (const endpoint of endpoints) {
+  // ── Strategy 3: Backend endpoints as last fallback if caller provided an ID ──
+  if (callerMeetingId) {
     try {
-      const query = new URLSearchParams();
-      if (callerMeetingId) query.append('meeting_id', callerMeetingId);
-      if (params.company) query.append('company', params.company);
-      const queryString = query.toString() ? `?${query.toString()}` : '';
-
-      const data = await _fetch('GET', `${endpoint}${queryString}`);
-      console.log(`🔍 getActiveMeeting(${endpoint}) response:`, JSON.stringify(data));
+      const data = await _fetch('GET', `/status/${encodeURIComponent(callerMeetingId)}`);
       const isActive = !!(data && (data.active === true || data.status === true || data.status === 'active' || data.status === 'Active'));
       if (isActive) {
-        return { success: true, active: true, meeting_id: data.meeting_id || null, company: data.company || null, host_name: data.host_name || null };
+        return { success: true, active: true, meeting_id: data.meeting_id || callerMeetingId, company: data.company || null, host_name: data.host_name || null };
       }
-    } catch (err) {
-      console.warn(`📡 getActiveMeeting(${endpoint}) error:`, err.message);
-    }
+    } catch (_) {}
   }
 
-  return { success: true, active: false, meeting_id: null, company: null };
+  return { success: true, active: false, meeting_id: callerMeetingId, company: null };
 }
 
 export async function checkAnyActiveMeeting() {

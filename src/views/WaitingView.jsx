@@ -55,10 +55,10 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
           }
         }
 
-        // Strategy 2: ALWAYS try /active_meeting discovery (primary method for participants)
+        // Strategy 2: Try relay + discovery with meeting_id for multi-meeting isolation
         if (!res?.active) {
           try {
-            const discovery = await getActiveMeeting();
+            const discovery = await getActiveMeeting({ meeting_id: meetingId });
             console.log(`⏳ WaitingView: getActiveMeeting() =>`, JSON.stringify(discovery));
             if (discovery?.active) {
               res = discovery;
@@ -195,7 +195,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
               className="btn btn--secondary btn--sm btn--full"
               onClick={async () => {
                 const { getActiveMeeting } = await import('../api');
-                const discovery = await getActiveMeeting();
+                const discovery = await getActiveMeeting({ meeting_id: context?.meeting_id });
                 if (discovery?.active) {
                   autoJoin({
                     id: (discovery.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),

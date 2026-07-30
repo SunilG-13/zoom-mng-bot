@@ -318,50 +318,40 @@ async function _registerMeetingRelay(meetingId, company, hostName) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ meeting_id: meetingId, company, host_name: hostName }),
     });
-    console.log('📡 Relay: Meeting registered successfully');
+    console.log(`📡 Relay: Meeting [${meetingId}] registered as ${company}`);
   } catch (e) {
     console.warn('📡 Relay: Registration failed (non-critical):', e.message);
   }
 }
 
-// Clear meeting from Vite relay
-async function _clearMeetingRelay() {
+// Clear a specific meeting from Vite relay
+async function _clearMeetingRelay(meetingId) {
   try {
-    await fetch('/relay/meeting', { method: 'DELETE' });
-    console.log('📡 Relay: Meeting cleared');
+    const url = meetingId
+      ? `/relay/meeting?meeting_id=${encodeURIComponent(meetingId)}`
+      : '/relay/meeting';
+    await fetch(url, { method: 'DELETE' });
+    console.log(`📡 Relay: Meeting [${meetingId || 'ALL'}] cleared`);
   } catch (e) {
     console.warn('📡 Relay: Clear failed (non-critical):', e.message);
   }
 }
 
-// GET /active_meeting  →  discover any active meeting on backend
+// Discover active meeting — supports multi-meeting isolation
+// If callerMeetingId is provided, tries to find THAT specific meeting first.
 export async function getActiveMeeting(params = {}) {
   if (CONFIG.USE_MOCK_API) return { success: true, active: false, meeting_id: null, company: null };
 
-  // Strategy 1: Check the Vite relay first (most reliable for dev)
-  try {
-    const relayRes = await fetch('/relay/meeting');
-    if (relayRes.ok) {
-      const relayData = await relayRes.json();
-      console.log('🔍 getActiveMeeting(relay) response:', JSON.stringify(relayData));
-      if (relayData.active && relayData.meeting_id) {
-        // Verify the meeting is still alive on backend
-        try {
-          const verify = await _fetch('GET', `/status/${encodeURIComponent(relayData.meeting_id)}`);
-          if (verify.status === true || verify.status === 'active' || verify.status === 'Active') {
-            return {
-              success: true,
-              active: true,
-              meeting_id: relayData.meeting_id,
-              company: relayData.company || verify.company || null,
-              host_name: relayData.host_name || verify.host_name || null,
-            };
-          } else {
-            console.log('🔍 Relay meeting exists but backend says inactive, clearing relay...');
-            _clearMeetingRelay();
-          }
-        } catch (e) {
-          // Backend unreachable but relay has data — trust relay
+  const callerMeetingId = params.meeting_id || null;
+
+  // Strategy 1: If caller has a specific meeting_id, look it up in the relay
+  if (callerMeetingId) {
+    try {
+      const relayRes = await fetch(`/relay/meeting?meeting_id=${encodeURIComponent(callerMeetingId)}`);
+      if (relayRes.ok) {
+        const relayData = await relayRes.json();
+        console.log(`🔍 getActiveMeeting(relay, id=${callerMeetingId}):`, JSON.stringify(relayData));
+        if (relayData.active && relayData.meeting_id) {
           return {
             success: true,
             active: true,
@@ -371,17 +361,69 @@ export async function getActiveMeeting(params = {}) {
           };
         }
       }
+    } catch (e) {
+      console.warn('📡 Relay specific lookup failed:', e.message);
     }
-  } catch (e) {
-    console.warn('📡 Relay discovery failed (non-critical):', e.message);
   }
 
-  // Strategy 2: Try backend endpoints as fallback
+  // Strategy 2: Query ALL relay meetings and pick the right one
+  try {
+    const relayRes = await fetch('/relay/meeting');
+    if (relayRes.ok) {
+      const relayData = await relayRes.json();
+      const meetings = relayData.meetings || [];
+      console.log(`🔍 getActiveMeeting(relay, all): ${meetings.length} meeting(s)`);
+
+      if (meetings.length > 0) {
+        // If caller has a meeting_id, try exact match first
+        if (callerMeetingId) {
+          const match = meetings.find(m => m.meeting_id === callerMeetingId);
+          if (match) {
+            return { success: true, active: true, ...match };
+          }
+        }
+
+        // If only ONE meeting exists, return it (safe to assume it's the right one)
+        if (meetings.length === 1) {
+          const only = meetings[0];
+          // Verify with backend
+          try {
+            const verify = await _fetch('GET', `/status/${encodeURIComponent(only.meeting_id)}`);
+            if (verify.status === true || verify.status === 'active' || verify.status === 'Active') {
+              return { success: true, active: true, meeting_id: only.meeting_id, company: only.company || verify.company, host_name: only.host_name || verify.host_name };
+            } else {
+              _clearMeetingRelay(only.meeting_id);
+            }
+          } catch (e) {
+            // Backend unreachable — trust relay
+            return { success: true, active: true, ...only };
+          }
+        }
+
+        // MULTIPLE meetings exist but caller has no real ID — return all so UI can let them pick
+        // For now, return the first verified-active one
+        for (const m of meetings) {
+          try {
+            const verify = await _fetch('GET', `/status/${encodeURIComponent(m.meeting_id)}`);
+            if (verify.status === true || verify.status === 'active' || verify.status === 'Active') {
+              return { success: true, active: true, meeting_id: m.meeting_id, company: m.company || verify.company, host_name: m.host_name || verify.host_name };
+            } else {
+              _clearMeetingRelay(m.meeting_id);
+            }
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('📡 Relay all-meetings lookup failed:', e.message);
+  }
+
+  // Strategy 3: Try backend endpoints as last fallback
   const endpoints = ['/active_meeting', '/status'];
   for (const endpoint of endpoints) {
     try {
       const query = new URLSearchParams();
-      if (params.meeting_id) query.append('meeting_id', params.meeting_id);
+      if (callerMeetingId) query.append('meeting_id', callerMeetingId);
       if (params.company) query.append('company', params.company);
       const queryString = query.toString() ? `?${query.toString()}` : '';
 
@@ -389,13 +431,7 @@ export async function getActiveMeeting(params = {}) {
       console.log(`🔍 getActiveMeeting(${endpoint}) response:`, JSON.stringify(data));
       const isActive = !!(data && (data.active === true || data.status === true || data.status === 'active' || data.status === 'Active'));
       if (isActive) {
-        return {
-          success: true,
-          active: true,
-          meeting_id: data.meeting_id || null,
-          company: data.company || null,
-          host_name: data.host_name || null,
-        };
+        return { success: true, active: true, meeting_id: data.meeting_id || null, company: data.company || null, host_name: data.host_name || null };
       }
     } catch (err) {
       console.warn(`📡 getActiveMeeting(${endpoint}) error:`, err.message);
@@ -474,8 +510,8 @@ export async function checkMeetingStatus(meetingId) {
 // POST /end_meeting  →  { meeting_id }
 export async function endMeeting(meetingId) {
   if (CONFIG.USE_MOCK_API) return MockApi.endMeeting(meetingId);
-  // Clear the Vite relay so participants stop discovering this meeting
-  _clearMeetingRelay();
+  // Clear this specific meeting from Vite relay (not other meetings!)
+  _clearMeetingRelay(meetingId);
   try {
     return await _fetch('POST', '/end_meeting', { meeting_id: meetingId });
   } catch (err) {

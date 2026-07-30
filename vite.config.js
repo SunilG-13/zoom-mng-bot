@@ -2,60 +2,79 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
 /**
- * Vite plugin: lightweight meeting relay.
+ * Vite plugin: multi-meeting relay.
  * 
- * The backend's /active_meeting endpoint is broken (always returns active:false),
- * but /status/{meeting_id} works if you know the ID.
+ * Stores MULTIPLE active meetings keyed by meeting_id so participants
+ * in different Zoom meetings (Biocon vs Pfizer) get routed correctly.
  * 
- * This relay stores the host's meeting info in-memory so participants
- * (who go through the same Vite/ngrok server) can discover it.
- * 
- * POST /relay/meeting  → host registers { meeting_id, company, host_name }
- * GET  /relay/meeting  → participant discovers the active meeting
- * DELETE /relay/meeting → host ends meeting (clears relay)
+ * POST   /relay/meeting              → host registers { meeting_id, company, host_name }
+ * GET    /relay/meeting?meeting_id=X  → lookup specific meeting by ID
+ * GET    /relay/meeting               → list ALL active meetings
+ * DELETE /relay/meeting?meeting_id=X  → remove specific meeting
+ * DELETE /relay/meeting               → remove all meetings
  */
 function meetingRelayPlugin() {
-  let activeMeeting = null; // { meeting_id, company, host_name, started_at }
+  // Map<meeting_id, { meeting_id, company, host_name, started_at }>
+  const activeMeetings = new Map();
 
   return {
     name: "meeting-relay",
     configureServer(server) {
-      // POST — host registers active meeting
       server.middlewares.use("/relay/meeting", (req, res, next) => {
+        const url = new URL(req.url, "http://localhost");
+        const queryMeetingId = url.searchParams.get("meeting_id");
+
         if (req.method === "POST") {
           let body = "";
           req.on("data", (chunk) => (body += chunk));
           req.on("end", () => {
             try {
               const data = JSON.parse(body);
-              activeMeeting = {
+              if (!data.meeting_id) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "meeting_id is required" }));
+                return;
+              }
+              const entry = {
                 meeting_id: data.meeting_id,
                 company: data.company || "Meeting",
                 host_name: data.host_name || "Host",
                 started_at: new Date().toISOString(),
               };
-              console.log("📡 Relay: Meeting registered →", JSON.stringify(activeMeeting));
+              activeMeetings.set(data.meeting_id, entry);
+              console.log(`📡 Relay: Meeting registered [${data.meeting_id}] → ${entry.company} (total: ${activeMeetings.size})`);
               res.writeHead(200, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ ok: true, ...activeMeeting }));
+              res.end(JSON.stringify({ ok: true, ...entry }));
             } catch (e) {
               res.writeHead(400, { "Content-Type": "application/json" });
               res.end(JSON.stringify({ error: "Invalid JSON" }));
             }
           });
         } else if (req.method === "GET") {
-          // GET — participant discovers active meeting
-          const result = activeMeeting
-            ? { active: true, ...activeMeeting }
-            : { active: false, meeting_id: null, company: null };
-          console.log("📡 Relay: Discovery query →", JSON.stringify(result));
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify(result));
+          if (queryMeetingId) {
+            // Lookup by specific meeting_id
+            const entry = activeMeetings.get(queryMeetingId);
+            const result = entry
+              ? { active: true, ...entry }
+              : { active: false, meeting_id: queryMeetingId, company: null };
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(result));
+          } else {
+            // Return ALL active meetings
+            const all = Array.from(activeMeetings.values());
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ meetings: all, count: all.length }));
+          }
         } else if (req.method === "DELETE") {
-          // DELETE — host ends meeting
-          console.log("📡 Relay: Meeting cleared");
-          activeMeeting = null;
+          if (queryMeetingId) {
+            activeMeetings.delete(queryMeetingId);
+            console.log(`📡 Relay: Meeting [${queryMeetingId}] removed (remaining: ${activeMeetings.size})`);
+          } else {
+            activeMeetings.clear();
+            console.log("📡 Relay: All meetings cleared");
+          }
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: true }));
+          res.end(JSON.stringify({ ok: true, remaining: activeMeetings.size }));
         } else {
           next();
         }

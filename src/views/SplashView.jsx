@@ -41,6 +41,9 @@ export default function SplashView({ onComplete }) {
       const { initZoom, getMeetingContext } = await import('../zoom');
       await initZoom();
       const context = await getMeetingContext();
+      console.log("Host/Participant Meeting ID:", context.meetingUUID);
+      console.log("Numeric Meeting:", context.meetingNumber);
+      console.log(context);
       console.log('🔍 Splash — Zoom context:', JSON.stringify(context));
 
       if (!cancelled) setStatusText(`Welcome, ${context.user_name}`);
@@ -62,7 +65,7 @@ export default function SplashView({ onComplete }) {
         saveMeetingUUID(context.meetingUUID);
       }
 
-      // Step 3: Check if THIS meeting is active on backend
+      // Step 3: Check if THIS meeting is active on backend (STRICT check by meeting_id)
       if (!cancelled) setStatusText('Checking meeting status...');
       const { checkMeetingStatusById, CONFIG } = await import('../api');
 
@@ -80,8 +83,6 @@ export default function SplashView({ onComplete }) {
         }
       }
 
-      // STRICT ISOLATION: getActiveMeeting will now only return THIS meeting
-      // if meeting_id is passed, so it's safe to use as a fallback.
       if (!activeMeeting && meetingId) {
         console.log('🔍 Splash — Checking getActiveMeeting for meeting_id:', meetingId);
         try {
@@ -173,10 +174,15 @@ export default function SplashView({ onComplete }) {
         } catch (_) {}
       }
 
-      // STRICT ISOLATION: Do NOT fall back to getActiveMeeting() discovery.
-      // If the participant's meeting is not active, they go to WaitingView.
       if (!activeMeeting) {
-        console.log(`🔍 Splash (manual) — Meeting [${meetingId}] not active. Participant will wait for host.`);
+        try {
+          const discovery = await getActiveMeeting({ meeting_id: meetingId });
+          if (discovery.active && discovery.meeting_id) {
+            context.meeting_id = discovery.meeting_id;
+            context.meetingUUID = discovery.meeting_id;
+            activeMeeting = discovery;
+          }
+        } catch (_) {}
       }
     }
 

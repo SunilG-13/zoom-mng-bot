@@ -333,11 +333,14 @@ export async function getMeetingContext() {
     }
 
     const displayName = _resolveDisplayName(userContext, meetingContext, matchedParticipant, _configResult, userObj, participants);
-    let meetingUUID = meetingContext.meetingUUID || meetingContext.meetingID || meetingContext.meetingId || '';
+    let meetingNumber = meetingContext.meetingNumber || meetingContext.meeting_number || null;
+    let meetingUUID = meetingContext.meetingUUID || meetingContext.meetingID || meetingContext.meetingId || (meetingNumber ? String(meetingNumber) : '');
+    let resolvedMeetingId = meetingUUID || (meetingNumber ? String(meetingNumber) : `meeting-${Date.now()}`);
 
     return {
-      meeting_id: meetingUUID || `meeting-${Date.now()}`,
+      meeting_id: resolvedMeetingId,
       meetingUUID: meetingUUID,
+      meetingNumber: meetingNumber,
       participant_id: userContext.participantUUID || userContext.participantId || userObj.participantUUID || null,
       user_name: displayName,
       user_email: userContext.email || userObj.email || null,

@@ -45,7 +45,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
       try {
         let res = null;
 
-        // Strategy 1: Check by exact meetingId
+        // Strictly check status for THIS meeting ID
         if (meetingId) {
           try {
             res = await checkMeetingStatusById(meetingId);
@@ -55,21 +55,16 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
           }
         }
 
-        // Strategy 2: Try relay lookup for THIS specific meeting_id only
-        // STRICT ISOLATION: Do NOT use getActiveMeeting() discovery —
-        // it could return a DIFFERENT meeting (e.g., Biocon when we need Pfizer)
-        if (!res?.active && meetingId) {
+        // Strategy 2: Try getActiveMeeting with meeting_id for matching
+        if (!res?.active) {
           try {
-            const relayRes = await fetch(`/relay/meeting?meeting_id=${encodeURIComponent(meetingId)}`);
-            if (relayRes.ok) {
-              const relayData = await relayRes.json();
-              console.log(`⏳ WaitingView: relay lookup for [${meetingId}] =>`, JSON.stringify(relayData));
-              if (relayData?.active && relayData.meeting_id) {
-                res = relayData;
-              }
+            const discovery = await getActiveMeeting({ meeting_id: meetingId });
+            console.log(`⏳ WaitingView: getActiveMeeting() =>`, JSON.stringify(discovery));
+            if (discovery?.active) {
+              res = discovery;
             }
           } catch (e) {
-            console.warn('⏳ WaitingView: relay lookup error:', e.message);
+            console.warn('⏳ WaitingView: getActiveMeeting error:', e.message);
           }
         }
 
@@ -221,41 +216,6 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
             <button
               className="btn btn--secondary btn--sm btn--full"
               onClick={async () => {
-                // STRICT ISOLATION: Only check THIS meeting_id via relay, not discovery
-                const meetingId = context?.meeting_id;
-                
-                if (meetingId) {
-                  try {
-                    const res = await checkMeetingStatusById(meetingId);
-                    if (res?.active) {
-                      autoJoin({
-                        id: (res.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
-                        name: res.company || 'Meeting',
-                        company: res.company,
-                        meeting_id: res.meeting_id || meetingId,
-                      });
-                      return;
-                    }
-                  } catch (_) {}
-                  // Also try relay lookup
-                  try {
-                    const relayRes = await fetch(`/relay/meeting?meeting_id=${encodeURIComponent(meetingId)}`);
-                    if (relayRes.ok) {
-                      const relayData = await relayRes.json();
-                      if (relayData?.active) {
-                        autoJoin({
-                          id: (relayData.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
-                          name: relayData.company || 'Meeting',
-                          company: relayData.company,
-                          meeting_id: relayData.meeting_id,
-                        });
-                        return;
-                      }
-                    }
-                  } catch (_) {}
-                }
-
-                // Fallback using getActiveMeeting for browser mode (no context.meeting_id)
                 const { getActiveMeeting } = await import('../api');
                 let discovery = await getActiveMeeting({ meeting_id: context?.meeting_id });
                 
@@ -282,7 +242,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
                     id: (discovery.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
                     name: discovery.company || 'Meeting',
                     company: discovery.company,
-                    meeting_id: discovery.meeting_id,
+                    meeting_id: discovery.meeting_id || context?.meeting_id,
                   });
                 }
               }}

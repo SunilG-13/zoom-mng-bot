@@ -334,12 +334,27 @@ export async function getMeetingContext() {
 
     const displayName = _resolveDisplayName(userContext, meetingContext, matchedParticipant, _configResult, userObj, participants);
     let meetingNumber = meetingContext.meetingNumber || meetingContext.meeting_number || null;
-    let meetingUUID = meetingContext.meetingUUID || meetingContext.meetingID || meetingContext.meetingId || (meetingNumber ? String(meetingNumber) : '');
-    let resolvedMeetingId = meetingUUID || (meetingNumber ? String(meetingNumber) : `meeting-${Date.now()}`);
+    let zoomMeetingId =
+      meetingContext.meetingUUID ||
+      meetingContext.meeting_id ||
+      meetingContext.meetingID ||
+      meetingContext.meetingId ||
+      (meetingNumber ? String(meetingNumber) : null);
+
+    if (!zoomMeetingId && typeof zoomSdk.getMeetingUUID === 'function') {
+      try {
+        const directUUID = await zoomSdk.getMeetingUUID();
+        if (directUUID) {
+          zoomMeetingId = typeof directUUID === 'string' ? directUUID : (directUUID?.meetingUUID || directUUID?.meetingId);
+        }
+      } catch (_) {}
+    }
+
+    const resolvedMeetingId = zoomMeetingId || (meetingNumber ? String(meetingNumber) : `meeting-${Date.now()}`);
 
     return {
       meeting_id: resolvedMeetingId,
-      meetingUUID: meetingUUID,
+      meetingUUID: resolvedMeetingId,
       meetingNumber: meetingNumber,
       participant_id: userContext.participantUUID || userContext.participantId || userObj.participantUUID || null,
       user_name: displayName,

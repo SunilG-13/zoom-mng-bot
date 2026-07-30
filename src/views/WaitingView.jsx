@@ -37,7 +37,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     let isMounted = true;
     let timer = null;
 
-    const meetingId = context?.meeting_id;
+    const meetingId = context?.meetingUUID || context?.meeting_id || context?.meetingNumber;
     const isFallbackId = !meetingId || meetingId.startsWith('fallback-') || meetingId.startsWith('mng-') || meetingId.startsWith('mng_') || meetingId.startsWith('browser_') || meetingId.startsWith('meeting-');
     console.log(`⏳ WaitingView: Polling for meeting_id="${meetingId}" (isFallback=${isFallbackId})`);
 
@@ -144,10 +144,11 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
 
     if (targetData.meeting_id) {
       saveMeetingId(targetData.meeting_id);
-      saveMeetingUUID(targetData.meeting_id);
+      if (context?.meetingUUID) {
+        saveMeetingUUID(context.meetingUUID);
+      }
       if (context) {
         context.meeting_id = targetData.meeting_id;
-        context.meetingUUID = targetData.meeting_id;
       }
     }
 
@@ -216,33 +217,47 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
             <button
               className="btn btn--secondary btn--sm btn--full"
               onClick={async () => {
-                const { getActiveMeeting } = await import('../api');
-                let discovery = await getActiveMeeting({ meeting_id: context?.meeting_id });
-                
-                if (!discovery?.active && context?.meeting_id) {
+                const { checkMeetingStatusById, getActiveMeeting } = await import('../api');
+                const myId = context?.meetingUUID || context?.meeting_id || context?.meetingNumber;
+                let activeRes = null;
+
+                if (myId) {
+                  try {
+                    const res = await checkMeetingStatusById(myId);
+                    if (res?.active) activeRes = res;
+                  } catch (_) {}
+                }
+
+                if (!activeRes?.active) {
+                  try {
+                    const discovery = await getActiveMeeting({ meeting_id: myId });
+                    if (discovery?.active) activeRes = discovery;
+                  } catch (_) {}
+                }
+
+                if (!activeRes?.active && myId) {
                   try {
                     const relayRes = await fetch('/relay/meeting');
                     if (relayRes.ok) {
                       const relayData = await relayRes.json();
                       const meetings = relayData.meetings || [];
-                      const myId = context.meeting_id;
                       const match = meetings.find(m =>
                         m.meeting_id === myId || m.zoom_meeting_id === myId ||
                         (m.meeting_id && myId && (m.meeting_id.includes(myId) || myId.includes(m.meeting_id)))
                       );
                       if (match) {
-                        discovery = { active: true, meeting_id: match.meeting_id, company: match.company };
+                        activeRes = { active: true, meeting_id: match.meeting_id, company: match.company };
                       }
                     }
                   } catch (_) {}
                 }
 
-                if (discovery?.active) {
+                if (activeRes?.active) {
                   autoJoin({
-                    id: (discovery.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
-                    name: discovery.company || 'Meeting',
-                    company: discovery.company,
-                    meeting_id: discovery.meeting_id || context?.meeting_id,
+                    id: (activeRes.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
+                    name: activeRes.company || 'Meeting',
+                    company: activeRes.company,
+                    meeting_id: activeRes.meeting_id || myId,
                   });
                 }
               }}

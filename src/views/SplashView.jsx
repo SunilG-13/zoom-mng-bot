@@ -70,7 +70,7 @@ export default function SplashView({ onComplete }) {
       const { checkMeetingStatusById, CONFIG } = await import('../api');
 
       let activeMeeting = null;
-      const meetingId = context.meeting_id;
+      const meetingId = context.meetingUUID || context.meeting_id || context.meetingNumber;
       if (meetingId) {
         try {
           const res = await checkMeetingStatusById(meetingId);
@@ -222,10 +222,11 @@ export default function SplashView({ onComplete }) {
       if (activeMeeting) {
         if (activeMeeting.meeting_id) {
           context.meeting_id = activeMeeting.meeting_id;
-          context.meetingUUID = activeMeeting.meeting_id;
           const { saveMeetingId, saveMeetingUUID } = await import('../utils/meetingStorage');
           saveMeetingId(activeMeeting.meeting_id);
-          saveMeetingUUID(activeMeeting.meeting_id);
+          if (context.meetingUUID) {
+            saveMeetingUUID(context.meetingUUID);
+          }
         }
 
         const companyName = activeMeeting.company || 'Company';

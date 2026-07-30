@@ -80,52 +80,20 @@ export default function SplashView({ onComplete }) {
         }
       }
 
-      // STRICT ISOLATION: Do NOT fall back to getActiveMeeting() discovery.
-      // If the participant's meeting_id is not registered on backend, it means
-      // the host hasn't started THIS meeting yet — go to WaitingView.
-      // Falling back to discovery would risk connecting to a DIFFERENT meeting.
-      if (!activeMeeting) {
-        console.log(`🔍 Splash — Meeting [${meetingId}] not active on backend. Participant will wait for host.`);
-      }
-
-      // Step 3b: FALLBACK — direct relay query when prior strategies failed
-      // This handles the common case where the Zoom SDK ID doesn't match any
-      // relay entry exactly, but there's only ONE active meeting (single-meeting scenario)
-      if (!activeMeeting) {
-        console.log('🔍 Splash — Prior strategies failed, trying direct /relay/meeting fallback...');
+      // STRICT ISOLATION: getActiveMeeting will now only return THIS meeting
+      // if meeting_id is passed, so it's safe to use as a fallback.
+      if (!activeMeeting && meetingId) {
+        console.log('🔍 Splash — Checking getActiveMeeting for meeting_id:', meetingId);
         try {
-          const relayRes = await fetch('/relay/meeting');
-          if (relayRes.ok) {
-            const relayData = await relayRes.json();
-            const meetings = relayData.meetings || [];
-            console.log(`🔍 Splash — Direct relay: ${meetings.length} meeting(s)`);
-            if (meetings.length === 1) {
-              // Single meeting — safe to use it
-              const only = meetings[0];
-              activeMeeting = { active: true, meeting_id: only.meeting_id, company: only.company, host_name: only.host_name };
-              context.meeting_id = only.meeting_id;
-              context.meetingUUID = only.meeting_id;
-              console.log(`🔍 Splash — Single relay meeting found: ${only.company} [${only.meeting_id}]`);
-            } else if (meetings.length > 1) {
-              // Multiple meetings — try fuzzy match by meeting_id
-              const myId = meetingId || '';
-              const match = meetings.find(m =>
-                m.meeting_id === myId ||
-                m.zoom_meeting_id === myId ||
-                (m.meeting_id && myId && (m.meeting_id.includes(myId) || myId.includes(m.meeting_id)))
-              );
-              if (match) {
-                activeMeeting = { active: true, meeting_id: match.meeting_id, company: match.company, host_name: match.host_name };
-                context.meeting_id = match.meeting_id;
-                context.meetingUUID = match.meeting_id;
-                console.log(`🔍 Splash — Fuzzy relay match found: ${match.company} [${match.meeting_id}]`);
-              } else {
-                console.log(`🔍 Splash — ${meetings.length} relay meetings, none match caller ID "${myId}" — cannot auto-select`);
-              }
-            }
+          const discovery = await getActiveMeeting({ meeting_id: meetingId });
+          console.log(`🔍 Splash — getActiveMeeting response:`, JSON.stringify(discovery));
+          if (discovery.active && discovery.meeting_id) {
+            activeMeeting = discovery;
+            context.meeting_id = discovery.meeting_id;
+            context.meetingUUID = discovery.meeting_id;
           }
-        } catch (e) {
-          console.warn('🔍 Splash — Direct relay fallback error:', e.message);
+        } catch (err) {
+          console.warn('🔍 Splash — getActiveMeeting error:', err);
         }
       }
 
@@ -138,26 +106,34 @@ export default function SplashView({ onComplete }) {
       // ---------------------------------------------------------
       // ROLE DETECTION & ROUTING RULES:
       //
-      // Priority 1: Zoom SDK explicit role (when OAuth scopes are present)
-      // Priority 2: Unknown SDK role + meeting ACTIVE → auto-join as participant
-      //             (if the host already started, the user is almost certainly a participant)
-      // Priority 3: Unknown SDK role + meeting NOT active → prompt user
+      // 1. Zoom SDK explicit role (when OAuth scopes are present)
+      // 2. Tab session flags (host already started / participant joined)
+      // 3. Active status of THIS meeting
+      // 4. Fallback: Prompt user to pick Host vs Participant
       // ---------------------------------------------------------
       let isHost;
+      const hasHostStartedSession = sessionStorage.getItem('mng_host_started') === 'true';
+      const hasParticipantJoinedSession = sessionStorage.getItem('mng_participant_joined') === 'true';
+
       if (context.explicitRole === false) {
         // SDK explicitly says participant
         isHost = false;
       } else if (context.explicitRole === true) {
         // SDK explicitly says host
         isHost = true;
+      } else if (hasHostStartedSession) {
+        // Host previously started a meeting in this browser tab
+        isHost = true;
+      } else if (hasParticipantJoinedSession) {
+        // Participant previously joined in this browser tab
+        isHost = false;
       } else if (activeMeeting) {
-        // SDK role is unknown BUT meeting IS active → auto-join as participant
-        // The host has already started, so this user must be a participant
-        console.log('🔍 Splash — Unknown SDK role + meeting active → auto-routing as participant');
+        // SDK role unknown, but THIS specific meeting IS active -> participant
+        console.log('🔍 Splash — Unknown SDK role + THIS meeting is active → auto-routing as participant');
         isHost = false;
       } else {
-        // SDK role is unknown AND no active meeting → need to ask
-        console.log('🔍 Splash — Unknown SDK role + no active meeting → asking user for Host vs Participant');
+        // SDK role unknown AND THIS meeting is not active -> ask user
+        console.log('🔍 Splash — Unknown SDK role + meeting not active → asking user for Host vs Participant');
         setStoredContext(context);
         setStoredActiveMeeting(activeMeeting);
         setNeedsManualRole(true);

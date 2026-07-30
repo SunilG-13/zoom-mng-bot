@@ -113,11 +113,25 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
   useEffect(() => {
     loadData();
     const handler = (e) => {
-      if (e.detail) { setLogs(e.detail); if (onLogsUpdated) onLogsUpdated(e.detail); }
+      if (e.detail) {
+        // If event contains meeting_id, ensure it matches current meeting context
+        const eventMeetingId = e.detail.meeting_id || e.detail.meetingId;
+        const questionsList = Array.isArray(e.detail) ? e.detail : e.detail.questions;
+
+        if (eventMeetingId && context?.meeting_id && eventMeetingId !== context.meeting_id) {
+          console.log(`🛡️ DashboardView ignored mng-logs-updated event for meeting_id=${eventMeetingId} (current: ${context.meeting_id})`);
+          return;
+        }
+
+        if (questionsList) {
+          setLogs(questionsList);
+          if (onLogsUpdated) onLogsUpdated(questionsList);
+        }
+      }
     };
     window.addEventListener('mng-logs-updated', handler);
     return () => window.removeEventListener('mng-logs-updated', handler);
-  }, [loadData, onLogsUpdated]);
+  }, [loadData, onLogsUpdated, context?.meeting_id]);
 
   useEffect(() => {
     pollRef.current = setInterval(() => loadData(), 3000);

@@ -24,16 +24,24 @@ const MEETING_UUID_KEY = "mng_last_meeting_uuid";
 // ── Meeting ID (backend identifier) ──
 
 export function getLastMeetingId() {
-  try { return localStorage.getItem(MEETING_ID_KEY); } catch { return null; }
+  try {
+    return sessionStorage.getItem(MEETING_ID_KEY) || localStorage.getItem(MEETING_ID_KEY);
+  } catch { return null; }
 }
 
 export function saveMeetingId(meetingId) {
   if (!meetingId) return;
-  try { localStorage.setItem(MEETING_ID_KEY, meetingId); } catch {}
+  try {
+    sessionStorage.setItem(MEETING_ID_KEY, meetingId);
+    localStorage.setItem(MEETING_ID_KEY, meetingId);
+  } catch {}
 }
 
 export function clearMeetingId() {
-  try { localStorage.removeItem(MEETING_ID_KEY); } catch {}
+  try {
+    sessionStorage.removeItem(MEETING_ID_KEY);
+    localStorage.removeItem(MEETING_ID_KEY);
+  } catch {}
 }
 
 // ── Meeting UUID (from Zoom SDK — unique per meeting instance) ──

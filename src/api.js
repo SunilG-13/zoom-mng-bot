@@ -126,15 +126,7 @@ export async function startMeeting(meetingId, company, hostName = 'Host') {
     if (msg.includes('already exists') || msg.includes('already started')) {
       try {
         await _fetch('POST', '/end_meeting', { meeting_id: meetingId });
-      } catch (_) {
-        // Try ending any active meeting
-        try {
-          const active = await _fetch('GET', '/meeting/active');
-          if (active?.meeting_id) {
-            await _fetch('POST', '/end_meeting', { meeting_id: active.meeting_id });
-          }
-        } catch (_) {}
-      }
+      } catch (_) {}
       // Now start fresh
       const res2 = await _fetch('POST', '/start_meeting', payload);
       return {
@@ -212,14 +204,16 @@ export async function askQuestion(meetingId, sessionId, userName, question, user
 
 // GET /meeting/{meeting_id}/participant/{participant_id}  →  get participant's questions history
 export async function getParticipantQuestions(meetingId, participantId, sessionId) {
-  if (CONFIG.USE_MOCK_API) return MockApi.getParticipantQuestions(meetingId, participantId, sessionId);
+  const targetId = meetingId || getLastMeetingId();
+  if (!targetId) return { questions: [] };
+  if (CONFIG.USE_MOCK_API) return MockApi.getParticipantQuestions(targetId, participantId, sessionId);
   const pid = participantId || sessionId;
   try {
     let data;
     try {
-      data = await _fetch('GET', `/meeting/${meetingId}/participant/${pid}`);
+      data = await _fetch('GET', `/meeting/${encodeURIComponent(targetId)}/participant/${encodeURIComponent(pid)}`);
     } catch (_) {
-      data = await _fetch('GET', `/meeting/${meetingId}`);
+      data = await _fetch('GET', `/meeting/${encodeURIComponent(targetId)}`);
     }
     const rawList = data?.questions || data?.data || [];
     const questions = rawList
@@ -247,8 +241,10 @@ export async function getParticipantQuestions(meetingId, participantId, sessionI
 
 // GET /meeting/{meeting_id}/pending  →  unresolved/partial questions
 export async function getPendingQuestions(meetingId) {
-  if (CONFIG.USE_MOCK_API) return MockApi.getPendingQuestions(meetingId);
-  const data = await _fetch('GET', `/meeting/${meetingId}/pending`);
+  const targetId = meetingId || getLastMeetingId();
+  if (!targetId) return { questions: [] };
+  if (CONFIG.USE_MOCK_API) return MockApi.getPendingQuestions(targetId);
+  const data = await _fetch('GET', `/meeting/${encodeURIComponent(targetId)}/pending`);
   // Backend returns { data: [...] } — normalize to { questions: [...] }
   const questions = (data?.questions || data?.data || [])
     .map(q => ({
@@ -260,8 +256,10 @@ export async function getPendingQuestions(meetingId) {
 
 // GET /meeting/{meeting_id}  →  all questions log
 export async function getAllQuestions(meetingId) {
-  if (CONFIG.USE_MOCK_API) return MockApi.getAllQuestions(meetingId);
-  const data = await _fetch('GET', `/meeting/${meetingId}`);
+  const targetId = meetingId || getLastMeetingId();
+  if (!targetId) return { questions: [], total: 0 };
+  if (CONFIG.USE_MOCK_API) return MockApi.getAllQuestions(targetId);
+  const data = await _fetch('GET', `/meeting/${encodeURIComponent(targetId)}`);
   // Backend returns { "data": [...], "total_questions": N }
   // Normalize to { questions: [...] } so the dashboard always works
   const rawList = data?.questions || data?.data || [];

@@ -175,9 +175,11 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
         try {
           const data = await getAllQuestions(context.meeting_id);
           if (data?.questions && onNavigate) {
-            // Trigger a refresh via parent
+            // Trigger a refresh via parent with meeting_id check
             window.__mngLastQuestionLogs = data.questions;
-            window.dispatchEvent(new CustomEvent('mng-logs-updated', { detail: data.questions }));
+            window.dispatchEvent(new CustomEvent('mng-logs-updated', {
+              detail: { meeting_id: context?.meeting_id, questions: data.questions }
+            }));
           }
         } catch (_) {}
       }

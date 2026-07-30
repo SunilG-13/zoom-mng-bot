@@ -213,6 +213,7 @@ function AppInner() {
 
     try {
       localStorage.setItem('mng_host_user_name', resolvedHostName);
+      sessionStorage.setItem('mng_host_started', 'true');
     } catch (_) {}
 
     setIsHost(true);

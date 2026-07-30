@@ -123,31 +123,22 @@ export default function SplashView({ onComplete }) {
       // ROLE DETECTION & ROUTING RULES:
       //
       // Priority 1: Zoom SDK explicit role (when OAuth scopes are present)
-      // Priority 2: Meeting active on backend → auto-detect as participant
-      //             (host already started → this user is joining, hence participant)
-      // Priority 3: Meeting NOT active + unknown role → ask manually
+      // Priority 2: Unknown SDK role (null) → ALWAYS prompt user to pick Host or Participant
       // ---------------------------------------------------------
       let isHost;
       if (context.explicitRole === false) {
-        // SDK says participant
+        // SDK explicitly says participant
         isHost = false;
       } else if (context.explicitRole === true) {
-        // SDK says host
+        // SDK explicitly says host
         isHost = true;
       } else {
         // SDK role is unknown (null) — common without OAuth scopes
-        if (activeMeeting) {
-          // Meeting is active → someone already started it → this user is a participant
-          console.log('🔍 Splash — Unknown role but meeting active → treating as participant');
-          isHost = false;
-        } else {
-          // Meeting NOT active AND role unknown → MUST ask the user
-          console.log('🔍 Splash — Unknown role and no active meeting → asking user');
-          setStoredContext(context);
-          setStoredActiveMeeting(null);
-          setNeedsManualRole(true);
-          return; // Stop here and wait for manual selection
-        }
+        console.log('🔍 Splash — Unknown SDK role → asking user for Host vs Participant selection');
+        setStoredContext(context);
+        setStoredActiveMeeting(activeMeeting);
+        setNeedsManualRole(true);
+        return; // Stop here and wait for manual selection
       }
 
       routeUser(isHost, activeMeeting, context);
@@ -166,8 +157,10 @@ export default function SplashView({ onComplete }) {
     context.isHost = selectedRoleIsHost;
     context.user_role = selectedRoleIsHost ? 'host' : 'participant';
 
-    if (!selectedRoleIsHost) {
-      // User said "I am a Participant" — check once more if meeting started in the meantime
+    let activeMeeting = storedActiveMeeting;
+
+    if (!selectedRoleIsHost && !activeMeeting) {
+      // User said "I am a Participant" — check if meeting started
       const { checkMeetingStatusById, getActiveMeeting } = await import('../api');
       const meetingId = context.meeting_id;
       const isRealMeetingId = meetingId && 
@@ -179,25 +172,22 @@ export default function SplashView({ onComplete }) {
         try {
           const res = await checkMeetingStatusById(meetingId);
           if (res.active && res.meeting_id) {
-            routeUser(false, res, context);
-            return;
+            activeMeeting = res;
           }
         } catch (_) {}
       } else {
-        // No real meeting_id → try discovery
         try {
           const discovery = await getActiveMeeting();
           if (discovery.active && discovery.meeting_id) {
             context.meeting_id = discovery.meeting_id;
             context.meetingUUID = discovery.meeting_id;
-            routeUser(false, discovery, context);
-            return;
+            activeMeeting = discovery;
           }
         } catch (_) {}
       }
     }
 
-    routeUser(selectedRoleIsHost, null, context);
+    routeUser(selectedRoleIsHost, activeMeeting, context);
   };
 
   const routeUser = async (isHost, activeMeeting, context) => {
@@ -208,37 +198,48 @@ export default function SplashView({ onComplete }) {
 
     console.log(`🎯 Route Decision: isHost=${isHost}, activeMeeting=${!!activeMeeting}, explicitRole=${context.explicitRole}`);
 
-    if (activeMeeting) {
-      // Active meeting exists → resolve company info
-      const companyName = activeMeeting.company || 'Biocon';
-      const matched = CONFIG.COMPANIES.find(
-        c => c.name.toLowerCase() === companyName.toLowerCase()
-      );
-      const companyInfo = matched || {
-        id: companyName.toLowerCase().replace(/\s+/g, '_'),
-        name: companyName,
-      };
-
-      if (isHost) {
-        console.log('✅ Host → Chat + Dashboard (resume)');
+    if (isHost) {
+      // Host Routing
+      const hasHostStartedSession = sessionStorage.getItem('mng_host_started') === 'true';
+      if (hasHostStartedSession && activeMeeting) {
+        // Host has already started meeting in this active browser session → resume Chat+Dashboard
+        const companyName = activeMeeting.company || 'Biocon';
+        const matched = CONFIG.COMPANIES.find(
+          c => c.name.toLowerCase() === companyName.toLowerCase()
+        );
+        const companyInfo = matched || {
+          id: companyName.toLowerCase().replace(/\s+/g, '_'),
+          name: companyName,
+        };
+        console.log('✅ Host (session active) → Chat + Dashboard (resume)');
         onComplete(context, companyInfo, 'host-resume');
       } else {
+        // Fresh Host → Setup View (Enter company name & confirm display name)
+        console.log('✅ Host → Setup View (Company selection)');
+        onComplete(context, null, 'host');
+      }
+    } else {
+      // Participant Routing
+      if (activeMeeting) {
+        const companyName = activeMeeting.company || 'Biocon';
+        const matched = CONFIG.COMPANIES.find(
+          c => c.name.toLowerCase() === companyName.toLowerCase()
+        );
+        const companyInfo = matched || {
+          id: companyName.toLowerCase().replace(/\s+/g, '_'),
+          name: companyName,
+        };
+
         const hasJoinedInSession = sessionStorage.getItem('mng_participant_joined') === 'true';
         if (hasJoinedInSession) {
           console.log('✅ Participant (already joined in session) → Chat directly');
           onComplete(context, companyInfo, 'participant');
         } else {
-          console.log('✅ Participant (first time) → Username confirm then auto-join');
+          console.log('✅ Participant (first time) → Username confirm then auto-join Chat');
           onComplete(context, companyInfo, 'participant-setup');
         }
-      }
-    } else {
-      // No active meeting on backend yet
-      if (isHost) {
-        console.log('✅ Host → Setup View (Company selection)');
-        onComplete(context, null, 'host');
       } else {
-        console.log('✅ Participant → Waiting View (host has not started)');
+        console.log('✅ Participant → Waiting View (waiting for host to start)');
         onComplete(context, null, 'waiting');
       }
     }

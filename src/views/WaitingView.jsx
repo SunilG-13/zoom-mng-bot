@@ -9,7 +9,7 @@
    so we use /active_meeting discovery as the PRIMARY check.
    ============================================ */
 import { useEffect, useState, useRef } from 'react';
-import { checkMeetingStatusById, getActiveMeeting } from '../api';
+import { checkMeetingStatusById } from '../api';
 import { saveMeetingId, saveMeetingUUID, isGenericName, getLastMeetingId } from '../utils/meetingStorage';
 import { Icons } from '../components/Icons';
 
@@ -37,7 +37,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     let isMounted = true;
     let timer = null;
 
-    const meetingId = context?.meeting_id;
+    const meetingId = context?.meetingUUID || context?.meeting_id || context?.meetingNumber;
     const isFallbackId = !meetingId || meetingId.startsWith('fallback-') || meetingId.startsWith('mng-') || meetingId.startsWith('mng_') || meetingId.startsWith('browser_') || meetingId.startsWith('meeting-');
     console.log(`⏳ WaitingView: Polling for meeting_id="${meetingId}" (isFallback=${isFallbackId})`);
 
@@ -109,10 +109,11 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
 
     if (targetData.meeting_id) {
       saveMeetingId(targetData.meeting_id);
-      saveMeetingUUID(targetData.meeting_id);
+      if (context?.meetingUUID) {
+        saveMeetingUUID(context.meetingUUID);
+      }
       if (context) {
         context.meeting_id = targetData.meeting_id;
-        context.meetingUUID = targetData.meeting_id;
       }
     }
 
@@ -182,7 +183,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
               className="btn btn--secondary btn--sm btn--full"
               onClick={async () => {
                 const { checkMeetingStatusById } = await import('../api');
-                const myId = context?.meeting_id;
+                const myId = context?.meetingUUID || context?.meeting_id || context?.meetingNumber;
                 if (!myId) return;
                 const statusRes = await checkMeetingStatusById(myId);
                 if (statusRes?.active) {

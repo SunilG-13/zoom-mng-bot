@@ -80,7 +80,7 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
     }
 
     try {
-      let activeId = context?.meeting_id || context?.meetingUUID;
+      let activeId = context?.meetingUUID || context?.meeting_id || context?.meetingNumber;
       if (!activeId) {
         activeId = `mng_host_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       }
@@ -101,7 +101,7 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
   const handleOpenChat = () => {
     const co = company.trim();
     if (!co || !onHostMeetingStarted) return;
-    const finalId = startedMeetingId || context?.meeting_id;
+    const finalId = startedMeetingId || context?.meetingUUID || context?.meeting_id || context?.meetingNumber;
     if (finalId) {
       saveMeetingId(finalId);
     }

@@ -486,28 +486,8 @@ export async function checkMeetingStatusById(meetingId) {
 
 // GET /status/{meeting_id}  →  check if meeting is active on backend
 export async function checkActiveMeeting(meetingId) {
-  if (CONFIG.USE_MOCK_API) return MockApi.checkMeetingStatus(meetingId);
   const targetId = meetingId || getLastMeetingId();
-
-  // If we have a real meeting_id (not a fallback), use direct /status check ONLY
-  const isFallbackId = !targetId || targetId.startsWith('fallback-') || targetId.startsWith('meeting-') || targetId.startsWith('mng-');
-
-  if (targetId && !isFallbackId) {
-    // Real meeting_id → ONLY check /status/{meeting_id}, no discovery
-    return checkMeetingStatusById(targetId);
-  }
-
-  // No real meeting_id → try /active_meeting discovery as last resort
-  if (isFallbackId) {
-    console.log('🔍 No real meeting_id, falling back to /active_meeting discovery...');
-    const activeDiscovery = await getActiveMeeting();
-    if (activeDiscovery.active) {
-      console.log('🎯 Active meeting discovered via backend:', activeDiscovery.meeting_id);
-      return activeDiscovery;
-    }
-  }
-
-  return { success: true, active: false, meeting_id: targetId };
+  return checkMeetingStatusById(targetId);
 }
 
 export async function checkMeetingStatus(meetingId) {

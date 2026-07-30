@@ -45,48 +45,13 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
       try {
         let res = null;
 
-        // Strategy 1: Check by exact meetingId
+        // Strictly check status for THIS meeting ID
         if (meetingId) {
           try {
             res = await checkMeetingStatusById(meetingId);
             console.log(`⏳ WaitingView: checkMeetingStatusById("${meetingId}") =>`, JSON.stringify(res));
           } catch (e) {
             console.warn('⏳ WaitingView: checkMeetingStatusById error:', e.message);
-          }
-        }
-
-        // Strategy 2: Try getActiveMeeting with meeting_id for matching
-        if (!res?.active) {
-          try {
-            const discovery = await getActiveMeeting({ meeting_id: meetingId });
-            console.log(`⏳ WaitingView: getActiveMeeting() =>`, JSON.stringify(discovery));
-            if (discovery?.active) {
-              res = discovery;
-            }
-          } catch (e) {
-            console.warn('⏳ WaitingView: getActiveMeeting error:', e.message);
-          }
-        }
-
-        // Strategy 3: Check relay with fuzzy matching against meetingId
-        if (!res?.active && meetingId) {
-          try {
-            const relayRes = await fetch('/relay/meeting');
-            if (relayRes.ok) {
-              const relayData = await relayRes.json();
-              const meetings = relayData.meetings || [];
-              const match = meetings.find(m =>
-                m.meeting_id === meetingId ||
-                m.zoom_meeting_id === meetingId ||
-                (m.meeting_id && meetingId && (m.meeting_id.includes(meetingId) || meetingId.includes(m.meeting_id)))
-              );
-              if (match) {
-                res = { active: true, meeting_id: match.meeting_id, company: match.company, host_name: match.host_name };
-                console.log(`⏳ WaitingView: Fuzzy relay match → ${match.company}`);
-              }
-            }
-          } catch (e) {
-            console.warn('⏳ WaitingView: Direct relay fallback error:', e.message);
           }
         }
 
@@ -216,33 +181,16 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
             <button
               className="btn btn--secondary btn--sm btn--full"
               onClick={async () => {
-                const { getActiveMeeting } = await import('../api');
-                let discovery = await getActiveMeeting({ meeting_id: context?.meeting_id });
-                
-                if (!discovery?.active && context?.meeting_id) {
-                  try {
-                    const relayRes = await fetch('/relay/meeting');
-                    if (relayRes.ok) {
-                      const relayData = await relayRes.json();
-                      const meetings = relayData.meetings || [];
-                      const myId = context.meeting_id;
-                      const match = meetings.find(m =>
-                        m.meeting_id === myId || m.zoom_meeting_id === myId ||
-                        (m.meeting_id && myId && (m.meeting_id.includes(myId) || myId.includes(m.meeting_id)))
-                      );
-                      if (match) {
-                        discovery = { active: true, meeting_id: match.meeting_id, company: match.company };
-                      }
-                    }
-                  } catch (_) {}
-                }
-
-                if (discovery?.active) {
+                const { checkMeetingStatusById } = await import('../api');
+                const myId = context?.meeting_id;
+                if (!myId) return;
+                const statusRes = await checkMeetingStatusById(myId);
+                if (statusRes?.active) {
                   autoJoin({
-                    id: (discovery.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
-                    name: discovery.company || 'Meeting',
-                    company: discovery.company,
-                    meeting_id: discovery.meeting_id,
+                    id: (statusRes.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
+                    name: statusRes.company || 'Meeting',
+                    company: statusRes.company,
+                    meeting_id: statusRes.meeting_id || myId,
                   });
                 }
               }}

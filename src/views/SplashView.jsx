@@ -41,6 +41,9 @@ export default function SplashView({ onComplete }) {
       const { initZoom, getMeetingContext } = await import('../zoom');
       await initZoom();
       const context = await getMeetingContext();
+      console.log("Host/Participant Meeting ID:", context.meetingUUID);
+      console.log("Numeric Meeting:", context.meetingNumber);
+      console.log(context);
       console.log('🔍 Splash — Zoom context:', JSON.stringify(context));
 
       if (!cancelled) setStatusText(`Welcome, ${context.user_name}`);
@@ -62,9 +65,9 @@ export default function SplashView({ onComplete }) {
         saveMeetingUUID(context.meetingUUID);
       }
 
-      // Step 3: Check if THIS meeting is active on backend
+      // Step 3: Check if THIS meeting is active on backend (STRICT check by meeting_id)
       if (!cancelled) setStatusText('Checking meeting status...');
-      const { checkMeetingStatusById, getActiveMeeting, CONFIG } = await import('../api');
+      const { checkMeetingStatusById, CONFIG } = await import('../api');
 
       let activeMeeting = null;
       const meetingId = context.meeting_id;
@@ -77,21 +80,6 @@ export default function SplashView({ onComplete }) {
           }
         } catch (err) {
           console.warn('🔍 Splash — checkMeetingStatusById error:', err);
-        }
-      }
-
-      if (!activeMeeting && meetingId) {
-        console.log('🔍 Splash — Checking getActiveMeeting for meeting_id:', meetingId);
-        try {
-          const discovery = await getActiveMeeting({ meeting_id: meetingId });
-          console.log(`🔍 Splash — getActiveMeeting response:`, JSON.stringify(discovery));
-          if (discovery.active && discovery.meeting_id) {
-            activeMeeting = discovery;
-            context.meeting_id = discovery.meeting_id;
-            context.meetingUUID = discovery.meeting_id;
-          }
-        } catch (err) {
-          console.warn('🔍 Splash — getActiveMeeting error:', err);
         }
       }
 
@@ -159,7 +147,7 @@ export default function SplashView({ onComplete }) {
 
     if (!selectedRoleIsHost && !activeMeeting) {
       // User said "I am a Participant" — check if meeting started
-      const { checkMeetingStatusById, getActiveMeeting } = await import('../api');
+      const { checkMeetingStatusById } = await import('../api');
       const meetingId = context.meeting_id;
 
       if (meetingId) {
@@ -167,17 +155,6 @@ export default function SplashView({ onComplete }) {
           const res = await checkMeetingStatusById(meetingId);
           if (res.active && res.meeting_id) {
             activeMeeting = res;
-          }
-        } catch (_) {}
-      }
-
-      if (!activeMeeting) {
-        try {
-          const discovery = await getActiveMeeting({ meeting_id: meetingId });
-          if (discovery.active && discovery.meeting_id) {
-            context.meeting_id = discovery.meeting_id;
-            context.meetingUUID = discovery.meeting_id;
-            activeMeeting = discovery;
           }
         } catch (_) {}
       }

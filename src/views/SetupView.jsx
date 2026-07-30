@@ -80,8 +80,8 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
     }
 
     try {
-      let activeId = context?.meeting_id;
-      if (!activeId || activeId.startsWith('fallback-') || activeId.startsWith('meeting-') || activeId.startsWith('mng-')) {
+      let activeId = context?.meeting_id || context?.meetingUUID;
+      if (!activeId) {
         activeId = `mng_host_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       }
       const result = await startMeeting(activeId, company.trim(), finalHostName);

@@ -2,16 +2,15 @@
    MNG Bot — Waiting View
    
    Shows when participant opens bot before host has started.
-   Polls /status/{meeting_id} until the host starts the meeting.
-   Once active → auto-joins the participant (after username confirmation).
+   Polls /active_meeting until the host starts the meeting.
+   Once active → auto-joins the participant.
    
-   KEY FIX: Uses checkMeetingStatusById() to poll ONLY the
-   specific Zoom meeting — NO generic /active_meeting discovery.
-   This prevents cross-meeting hijacking in multi-meeting scenarios.
+   KEY: Participants usually don't have a real backend meeting_id yet,
+   so we use /active_meeting discovery as the PRIMARY check.
    ============================================ */
 import { useEffect, useState, useRef } from 'react';
 import { checkMeetingStatusById, getActiveMeeting } from '../api';
-import { saveMeetingId, saveMeetingUUID, isGenericName } from '../utils/meetingStorage';
+import { saveMeetingId, saveMeetingUUID, isGenericName, getLastMeetingId } from '../utils/meetingStorage';
 import { Icons } from '../components/Icons';
 
 export default function WaitingView({ context, onMeetingActive, onClosePanel }) {
@@ -39,32 +38,38 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     let timer = null;
 
     const meetingId = context?.meeting_id;
-    console.log(`⏳ WaitingView: Polling for meeting_id="${meetingId}"`);
+    const isFallbackId = !meetingId || meetingId.startsWith('fallback-') || meetingId.startsWith('mng-') || meetingId.startsWith('browser_');
+    console.log(`⏳ WaitingView: Polling for meeting_id="${meetingId}" (isFallback=${isFallbackId})`);
 
-    const checkStatus = async (showToast = false) => {
+    const checkStatus = async () => {
       try {
         let res = null;
-        const targetId = meetingId || getLastMeetingId();
-        
-        // 1. Check by target ID first
-        if (targetId) {
+
+        // Strategy 1: If we have a REAL meeting_id (not a fallback), check it directly
+        if (!isFallbackId) {
           try {
-            res = await checkMeetingStatusById(targetId);
-          } catch (_) {}
+            res = await checkMeetingStatusById(meetingId);
+            console.log(`⏳ WaitingView: checkMeetingStatusById("${meetingId}") =>`, JSON.stringify(res));
+          } catch (e) {
+            console.warn('⏳ WaitingView: checkMeetingStatusById error:', e.message);
+          }
         }
 
-        // 2. If not active by ID, perform unconstrained /active_meeting discovery
+        // Strategy 2: ALWAYS try /active_meeting discovery (primary method for participants)
         if (!res?.active) {
           try {
             const discovery = await getActiveMeeting();
+            console.log(`⏳ WaitingView: getActiveMeeting() =>`, JSON.stringify(discovery));
             if (discovery?.active) {
               res = discovery;
             }
-          } catch (_) {}
+          } catch (e) {
+            console.warn('⏳ WaitingView: getActiveMeeting error:', e.message);
+          }
         }
 
         if (res?.active && isMounted) {
-          const activeMeetingId = res.meeting_id || targetId;
+          const activeMeetingId = res.meeting_id || meetingId;
           const meetingData = {
             id: (res.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
             name: res.company || 'Meeting',
@@ -86,6 +91,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
           setStatusMsg('Host has not started yet — waiting for host to start...');
         }
       } catch (err) {
+        console.warn('⏳ WaitingView: checkStatus error:', err);
         if (isMounted) setStatusMsg('Connecting to server...');
       }
     };

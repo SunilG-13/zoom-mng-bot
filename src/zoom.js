@@ -335,15 +335,6 @@ export async function getMeetingContext() {
     const displayName = _resolveDisplayName(userContext, meetingContext, matchedParticipant, _configResult, userObj, participants);
     let meetingUUID = meetingContext.meetingUUID || meetingContext.meetingID || meetingContext.meetingId || '';
 
-    // If still missing, check stored meeting ID before falling back to timestamp
-    if (!meetingUUID) {
-      const saved = getLastMeetingId();
-      if (saved && !saved.startsWith('fallback-') && !saved.startsWith('mng-') && !saved.startsWith('meeting-')) {
-        meetingUUID = saved;
-        console.log(`📌 Recovered meetingUUID from local storage: ${meetingUUID}`);
-      }
-    }
-
     return {
       meeting_id: meetingUUID || `meeting-${Date.now()}`,
       meetingUUID: meetingUUID,
@@ -376,7 +367,7 @@ function _getFallbackContext() {
   const role = params.get('role') || '';
   const explicitRole = _evaluateRole(role);
   const userName = params.get('username') || params.get('user_name') || params.get('name') || params.get('screenName') || params.get('displayName') || params.get('participantName') || '';
-  const meetingId = params.get('meeting_id') || 'mng-' + Date.now().toString(36);
+  const meetingId = params.get('meeting_id') || 'mng_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
 
   let resolvedName = userName.trim();
   if (isGenericName(resolvedName)) {

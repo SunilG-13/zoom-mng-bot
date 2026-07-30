@@ -104,15 +104,6 @@ export default function SplashView({ onComplete }) {
         }
       }
 
-      // If an active meeting was found, align context meeting_id
-      if (activeMeeting?.meeting_id) {
-        context.meeting_id = activeMeeting.meeting_id;
-        context.meetingUUID = activeMeeting.meeting_id;
-        saveMeetingUUID(activeMeeting.meeting_id);
-        const { saveMeetingId } = await import('../utils/meetingStorage');
-        saveMeetingId(activeMeeting.meeting_id);
-      }
-
       // Minimum splash duration for smooth UX
       const elapsed = Date.now() - startTime;
       if (elapsed < 1600) await sleep(1600 - elapsed);
@@ -221,6 +212,14 @@ export default function SplashView({ onComplete }) {
     } else {
       // Participant Routing
       if (activeMeeting) {
+        if (activeMeeting.meeting_id) {
+          context.meeting_id = activeMeeting.meeting_id;
+          context.meetingUUID = activeMeeting.meeting_id;
+          const { saveMeetingId, saveMeetingUUID } = await import('../utils/meetingStorage');
+          saveMeetingId(activeMeeting.meeting_id);
+          saveMeetingUUID(activeMeeting.meeting_id);
+        }
+
         const companyName = activeMeeting.company || 'Biocon';
         const matched = CONFIG.COMPANIES.find(
           c => c.name.toLowerCase() === companyName.toLowerCase()

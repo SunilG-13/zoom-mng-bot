@@ -14,8 +14,28 @@ import react from "@vitejs/plugin-react";
  * DELETE /relay/meeting               → remove all meetings
  */
 function meetingRelayPlugin() {
-  // Map<meeting_id, { meeting_id, company, host_name, started_at }>
+  // Map<meeting_id, { meeting_id, zoom_meeting_id?, company, host_name, started_at }>
   const activeMeetings = new Map();
+
+  /**
+   * Find a meeting by exact or fuzzy ID match.
+   * Tries: exact key → exact zoom_meeting_id alias → substring/contains match.
+   */
+  function findMeeting(queryId) {
+    if (!queryId) return null;
+    // 1. Exact primary key match
+    if (activeMeetings.has(queryId)) return activeMeetings.get(queryId);
+    // 2. Exact zoom_meeting_id alias match
+    for (const entry of activeMeetings.values()) {
+      if (entry.zoom_meeting_id && entry.zoom_meeting_id === queryId) return entry;
+    }
+    // 3. Fuzzy: query is substring of stored ID, or stored ID is substring of query
+    for (const entry of activeMeetings.values()) {
+      if (entry.meeting_id.includes(queryId) || queryId.includes(entry.meeting_id)) return entry;
+      if (entry.zoom_meeting_id && (entry.zoom_meeting_id.includes(queryId) || queryId.includes(entry.zoom_meeting_id))) return entry;
+    }
+    return null;
+  }
 
   return {
     name: "meeting-relay",
@@ -37,12 +57,17 @@ function meetingRelayPlugin() {
               }
               const entry = {
                 meeting_id: data.meeting_id,
+                zoom_meeting_id: data.zoom_meeting_id || null,
                 company: data.company || "Meeting",
                 host_name: data.host_name || "Host",
                 started_at: new Date().toISOString(),
               };
               activeMeetings.set(data.meeting_id, entry);
-              console.log(`📡 Relay: Meeting registered [${data.meeting_id}] → ${entry.company} (total: ${activeMeetings.size})`);
+              // Also index by zoom_meeting_id if provided and different from meeting_id
+              if (data.zoom_meeting_id && data.zoom_meeting_id !== data.meeting_id) {
+                activeMeetings.set(data.zoom_meeting_id, entry);
+              }
+              console.log(`📡 Relay: Meeting registered [${data.meeting_id}]${data.zoom_meeting_id ? ` (zoom: ${data.zoom_meeting_id})` : ''} → ${entry.company} (total unique: ${new Set(Array.from(activeMeetings.values()).map(v => v.meeting_id)).size})`);
               res.writeHead(200, { "Content-Type": "application/json" });
               res.end(JSON.stringify({ ok: true, ...entry }));
             } catch (e) {
@@ -52,22 +77,36 @@ function meetingRelayPlugin() {
           });
         } else if (req.method === "GET") {
           if (queryMeetingId) {
-            // Lookup by specific meeting_id
-            const entry = activeMeetings.get(queryMeetingId);
+            // Lookup by specific meeting_id (exact + fuzzy)
+            const entry = findMeeting(queryMeetingId);
             const result = entry
               ? { active: true, ...entry }
               : { active: false, meeting_id: queryMeetingId, company: null };
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify(result));
           } else {
-            // Return ALL active meetings
-            const all = Array.from(activeMeetings.values());
+            // Return ALL active meetings (deduplicated by meeting_id)
+            const seen = new Set();
+            const all = [];
+            for (const entry of activeMeetings.values()) {
+              if (!seen.has(entry.meeting_id)) {
+                seen.add(entry.meeting_id);
+                all.push(entry);
+              }
+            }
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ meetings: all, count: all.length }));
           }
         } else if (req.method === "DELETE") {
           if (queryMeetingId) {
+            // Delete by exact key AND by fuzzy match
             activeMeetings.delete(queryMeetingId);
+            // Also remove any entry whose meeting_id or zoom_meeting_id matches
+            for (const [key, entry] of activeMeetings.entries()) {
+              if (entry.meeting_id === queryMeetingId || entry.zoom_meeting_id === queryMeetingId) {
+                activeMeetings.delete(key);
+              }
+            }
             console.log(`📡 Relay: Meeting [${queryMeetingId}] removed (remaining: ${activeMeetings.size})`);
           } else {
             activeMeetings.clear();

@@ -38,7 +38,7 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     let timer = null;
 
     const meetingId = context?.meeting_id;
-    const isFallbackId = !meetingId || meetingId.startsWith('fallback-') || meetingId.startsWith('mng-') || meetingId.startsWith('browser_');
+    const isFallbackId = !meetingId || meetingId.startsWith('fallback-') || meetingId.startsWith('mng-') || meetingId.startsWith('mng_') || meetingId.startsWith('browser_') || meetingId.startsWith('meeting-');
     console.log(`⏳ WaitingView: Polling for meeting_id="${meetingId}" (isFallback=${isFallbackId})`);
 
     const checkStatus = async () => {
@@ -65,6 +65,39 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
             }
           } catch (e) {
             console.warn('⏳ WaitingView: getActiveMeeting error:', e.message);
+          }
+        }
+
+        // Strategy 3: FALLBACK — direct /relay/meeting query
+        // Handles the case where meetingId doesn't match relay entries exactly
+        if (!res?.active) {
+          try {
+            const relayRes = await fetch('/relay/meeting');
+            if (relayRes.ok) {
+              const relayData = await relayRes.json();
+              const meetings = relayData.meetings || [];
+              console.log(`⏳ WaitingView: Direct relay fallback: ${meetings.length} meeting(s)`);
+
+              if (meetings.length === 1) {
+                // Single meeting — safe to use it
+                const only = meetings[0];
+                res = { active: true, meeting_id: only.meeting_id, company: only.company, host_name: only.host_name };
+                console.log(`⏳ WaitingView: Single relay meeting → ${only.company}`);
+              } else if (meetings.length > 1 && meetingId) {
+                // Multiple meetings — try fuzzy match
+                const match = meetings.find(m =>
+                  m.meeting_id === meetingId ||
+                  m.zoom_meeting_id === meetingId ||
+                  (m.meeting_id && meetingId && (m.meeting_id.includes(meetingId) || meetingId.includes(m.meeting_id)))
+                );
+                if (match) {
+                  res = { active: true, meeting_id: match.meeting_id, company: match.company, host_name: match.host_name };
+                  console.log(`⏳ WaitingView: Fuzzy relay match → ${match.company}`);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('⏳ WaitingView: Direct relay fallback error:', e.message);
           }
         }
 
@@ -195,7 +228,32 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
               className="btn btn--secondary btn--sm btn--full"
               onClick={async () => {
                 const { getActiveMeeting } = await import('../api');
-                const discovery = await getActiveMeeting({ meeting_id: context?.meeting_id });
+                let discovery = await getActiveMeeting({ meeting_id: context?.meeting_id });
+                
+                // If getActiveMeeting failed, try direct relay fallback
+                if (!discovery?.active) {
+                  try {
+                    const relayRes = await fetch('/relay/meeting');
+                    if (relayRes.ok) {
+                      const relayData = await relayRes.json();
+                      const meetings = relayData.meetings || [];
+                      if (meetings.length === 1) {
+                        const only = meetings[0];
+                        discovery = { active: true, meeting_id: only.meeting_id, company: only.company };
+                      } else if (meetings.length > 1 && context?.meeting_id) {
+                        const myId = context.meeting_id;
+                        const match = meetings.find(m =>
+                          m.meeting_id === myId || m.zoom_meeting_id === myId ||
+                          (m.meeting_id && myId && (m.meeting_id.includes(myId) || myId.includes(m.meeting_id)))
+                        );
+                        if (match) {
+                          discovery = { active: true, meeting_id: match.meeting_id, company: match.company };
+                        }
+                      }
+                    }
+                  } catch (_) {}
+                }
+
                 if (discovery?.active) {
                   autoJoin({
                     id: (discovery.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),

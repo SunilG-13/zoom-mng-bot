@@ -95,6 +95,47 @@ export default function SplashView({ onComplete }) {
         }
       }
 
+      // Step 3b: FALLBACK — direct relay query when prior strategies failed
+      // This handles the common case where the Zoom SDK ID doesn't match any
+      // relay entry exactly, but there's only ONE active meeting (single-meeting scenario)
+      if (!activeMeeting) {
+        console.log('🔍 Splash — Prior strategies failed, trying direct /relay/meeting fallback...');
+        try {
+          const relayRes = await fetch('/relay/meeting');
+          if (relayRes.ok) {
+            const relayData = await relayRes.json();
+            const meetings = relayData.meetings || [];
+            console.log(`🔍 Splash — Direct relay: ${meetings.length} meeting(s)`);
+            if (meetings.length === 1) {
+              // Single meeting — safe to use it
+              const only = meetings[0];
+              activeMeeting = { active: true, meeting_id: only.meeting_id, company: only.company, host_name: only.host_name };
+              context.meeting_id = only.meeting_id;
+              context.meetingUUID = only.meeting_id;
+              console.log(`🔍 Splash — Single relay meeting found: ${only.company} [${only.meeting_id}]`);
+            } else if (meetings.length > 1) {
+              // Multiple meetings — try fuzzy match by meeting_id
+              const myId = meetingId || '';
+              const match = meetings.find(m =>
+                m.meeting_id === myId ||
+                m.zoom_meeting_id === myId ||
+                (m.meeting_id && myId && (m.meeting_id.includes(myId) || myId.includes(m.meeting_id)))
+              );
+              if (match) {
+                activeMeeting = { active: true, meeting_id: match.meeting_id, company: match.company, host_name: match.host_name };
+                context.meeting_id = match.meeting_id;
+                context.meetingUUID = match.meeting_id;
+                console.log(`🔍 Splash — Fuzzy relay match found: ${match.company} [${match.meeting_id}]`);
+              } else {
+                console.log(`🔍 Splash — ${meetings.length} relay meetings, none match caller ID "${myId}" — cannot auto-select`);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('🔍 Splash — Direct relay fallback error:', e.message);
+        }
+      }
+
       // Minimum splash duration for smooth UX
       const elapsed = Date.now() - startTime;
       if (elapsed < 1600) await sleep(1600 - elapsed);
@@ -105,7 +146,9 @@ export default function SplashView({ onComplete }) {
       // ROLE DETECTION & ROUTING RULES:
       //
       // Priority 1: Zoom SDK explicit role (when OAuth scopes are present)
-      // Priority 2: Unknown SDK role (null) → ALWAYS prompt user to pick Host or Participant
+      // Priority 2: Unknown SDK role + meeting ACTIVE → auto-join as participant
+      //             (if the host already started, the user is almost certainly a participant)
+      // Priority 3: Unknown SDK role + meeting NOT active → prompt user
       // ---------------------------------------------------------
       let isHost;
       if (context.explicitRole === false) {
@@ -114,9 +157,14 @@ export default function SplashView({ onComplete }) {
       } else if (context.explicitRole === true) {
         // SDK explicitly says host
         isHost = true;
+      } else if (activeMeeting) {
+        // SDK role is unknown BUT meeting IS active → auto-join as participant
+        // The host has already started, so this user must be a participant
+        console.log('🔍 Splash — Unknown SDK role + meeting active → auto-routing as participant');
+        isHost = false;
       } else {
-        // SDK role is unknown (null) — common without OAuth scopes
-        console.log('🔍 Splash — Unknown SDK role → asking user for Host vs Participant selection');
+        // SDK role is unknown AND no active meeting → need to ask
+        console.log('🔍 Splash — Unknown SDK role + no active meeting → asking user for Host vs Participant');
         setStoredContext(context);
         setStoredActiveMeeting(activeMeeting);
         setNeedsManualRole(true);
@@ -128,6 +176,7 @@ export default function SplashView({ onComplete }) {
 
     return () => { cancelled = true; };
   }, [onComplete]);
+
 
   // Handle manual role selection when SDK fails to provide role
   const handleManualRole = async (selectedRoleIsHost) => {

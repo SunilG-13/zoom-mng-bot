@@ -292,10 +292,12 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
             <span className="dot" />
             <span>Live</span>
           </div>
-          <button className="btn btn--danger btn--sm" onClick={onEndMeeting} title="End Meeting">
-            {Icons.power}
-            <span>End</span>
-          </button>
+          {isHost && (
+            <button className="btn btn--danger btn--sm" onClick={onEndMeeting} title="End Meeting">
+              {Icons.power}
+              <span>End</span>
+            </button>
+          )}
           {onClosePanel && (
             <button className="btn btn--ghost" onClick={onClosePanel} style={{ padding: 4, marginLeft: 4 }} title="Close Panel">
               {Icons.x}

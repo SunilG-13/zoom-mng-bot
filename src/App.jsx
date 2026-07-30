@@ -120,6 +120,13 @@ function AppInner() {
    * 
    * detectedRole is set by SplashView using ONLY Zoom SDK data.
    * No localStorage role override here.
+   *
+   * Possible detectedRole values:
+   *   'host'             → Fresh host, no active meeting → Setup
+   *   'host-resume'      → Host returning to active meeting → Chat+Dashboard
+   *   'participant'      → Participant already joined in this session → Chat
+   *   'participant-setup' → Participant first time, meeting IS active → auto-join Chat
+   *   'waiting'          → Participant, meeting NOT active yet → WaitingView
    */
   const handleSplashComplete = useCallback(async (ctx, companyInfo, detectedRole) => {
     setContext(ctx);
@@ -136,7 +143,7 @@ function AppInner() {
 
     if (hostRole) {
       if (!companyInfo) {
-        // Host: No active meeting → MUST go through Setup (Issue #1 fix)
+        // Host: No active meeting → MUST go through Setup
         console.log("✅ Host: No active meeting → Setup (fresh start)");
         setMeetingInfo({ company: null, companyName: null });
         setPendingCount(0);
@@ -148,18 +155,37 @@ function AppInner() {
       setMeetingInfo({ company: companyInfo.id, companyName: companyInfo.name });
       setCurrentView('chat');
     } else {
-      // Participant: SplashView already checked /status endpoint
-      // If detectedRole === 'participant' (already joined in session), go directly to Chat
+      // ── PARTICIPANT ROUTING ──
       if (detectedRole === 'participant' && companyInfo) {
+        // Already joined in this session → Chat directly
         console.log("✅ Participant: Session active & joined → Chat directly");
         setMeetingInfo({
           company: companyInfo.id,
           companyName: companyInfo.name,
         });
         setCurrentView('chat');
+      } else if (detectedRole === 'participant-setup' && companyInfo) {
+        // First time participant, meeting IS active → auto-join Chat
+        // (SplashView already confirmed the meeting is active)
+        console.log("✅ Participant: First time + meeting active → Auto-joining Chat");
+        try {
+          localStorage.setItem('mng_participant_user_name', ctx.user_name || 'Guest User');
+          sessionStorage.setItem('mng_participant_joined', 'true');
+        } catch (_) {}
+        setMeetingInfo({
+          company: companyInfo.id,
+          companyName: companyInfo.name,
+        });
+        setContext(prev => ({
+          ...prev,
+          user_role: 'participant',
+          is_host: false,
+          isHost: false,
+        }));
+        setCurrentView('chat');
       } else {
-        // First time joining or meeting not started yet → Waiting/Join View
-        console.log("✅ Participant: Routing to Waiting/Join View");
+        // Meeting not started yet or no company info → Waiting/Join View
+        console.log("✅ Participant: Routing to Waiting View");
         if (companyInfo) {
           setMeetingInfo({
             company: companyInfo.id,
@@ -280,9 +306,9 @@ function AppInner() {
       return (
         <WaitingView
           context={ctxWithRole}
-          onMeetingActive={(meetingData) => {
-            setMeetingInfo({ company: meetingData.id, companyName: meetingData.name });
-            setCurrentView('chat');
+          onMeetingActive={(meetingData, participantName, realMeetingId) => {
+            // WaitingView auto-joined → route through handleParticipantJoined
+            handleParticipantJoined(meetingData, participantName, realMeetingId);
           }}
           onClosePanel={!isInZoom ? handleClosePanel : null}
         />

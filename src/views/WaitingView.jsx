@@ -1,5 +1,16 @@
+/* ============================================
+   MNG Bot — Waiting View
+   
+   Shows when participant opens bot before host has started.
+   Polls /status/{meeting_id} until the host starts the meeting.
+   Once active → auto-joins the participant (after username confirmation).
+   
+   KEY FIX: Uses checkMeetingStatusById() to poll ONLY the
+   specific Zoom meeting — NO generic /active_meeting discovery.
+   This prevents cross-meeting hijacking in multi-meeting scenarios.
+   ============================================ */
 import { useEffect, useState, useRef } from 'react';
-import { checkActiveMeeting, getActiveMeeting } from '../api';
+import { checkMeetingStatusById } from '../api';
 import { saveMeetingId, saveMeetingUUID, isGenericName } from '../utils/meetingStorage';
 import { Icons } from '../components/Icons';
 
@@ -32,14 +43,8 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
 
     const checkStatus = async () => {
       try {
-        let res = await checkActiveMeeting(meetingId);
-        if (!res?.active && (!meetingId || meetingId.startsWith('fallback-'))) {
-          // Only attempt discovery if no specific meeting ID was provided
-          const discovery = await getActiveMeeting();
-          if (discovery?.active) {
-            res = discovery;
-          }
-        }
+        // ONLY check this specific meeting — no generic discovery
+        const res = await checkMeetingStatusById(meetingId);
 
         if (res?.active && isMounted) {
           const activeMeetingId = res.meeting_id || meetingId;
@@ -51,6 +56,16 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
           };
           setActiveMeetingData(meetingData);
           setStatusMsg(`Host is active (${res.company || 'Meeting'})`);
+
+          // Auto-join: once the meeting becomes active, join automatically
+          // after a brief delay to let the user see the status change
+          if (timer) clearInterval(timer);
+          timer = null;
+          setTimeout(() => {
+            if (isMounted) {
+              autoJoin(meetingData);
+            }
+          }, 800);
         } else if (isMounted) {
           setActiveMeetingData(null);
           setStatusMsg('Host has not started yet — waiting for host to start...');
@@ -69,9 +84,8 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
     };
   }, [context?.meeting_id]);
 
-  const handleJoin = (targetData) => {
-    const data = targetData || activeMeetingData;
-    if (!data || isJoining) return;
+  const autoJoin = (targetData) => {
+    if (isJoining) return;
     setIsJoining(true);
 
     const finalName = participantName.trim() || 'Guest User';
@@ -85,18 +99,24 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
       context.user_name = finalName;
     }
 
-    if (data.meeting_id) {
-      saveMeetingId(data.meeting_id);
-      saveMeetingUUID(data.meeting_id);
+    if (targetData.meeting_id) {
+      saveMeetingId(targetData.meeting_id);
+      saveMeetingUUID(targetData.meeting_id);
       if (context) {
-        context.meeting_id = data.meeting_id;
-        context.meetingUUID = data.meeting_id;
+        context.meeting_id = targetData.meeting_id;
+        context.meetingUUID = targetData.meeting_id;
       }
     }
 
     if (onMeetingActiveRef.current) {
-      onMeetingActiveRef.current(data, finalName, data.meeting_id);
+      onMeetingActiveRef.current(targetData, finalName, targetData.meeting_id);
     }
+  };
+
+  const handleJoin = (targetData) => {
+    const data = targetData || activeMeetingData;
+    if (!data || isJoining) return;
+    autoJoin(data);
   };
 
   const isReadyToJoin = !!activeMeetingData;
@@ -117,11 +137,11 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '24px 16px', overflowY: 'auto' }}>
         <h2 style={{ fontSize: 18, color: 'var(--color-text-primary)', marginBottom: 6, textAlign: 'center' }}>
-          {isReadyToJoin ? 'Join AI Session 🚀' : 'Waiting for Host... ⏳'}
+          {isReadyToJoin ? 'Joining Session... 🚀' : 'Waiting for Host... ⏳'}
         </h2>
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center', marginBottom: 24, lineHeight: 1.5 }}>
           {isReadyToJoin
-            ? `The host has loaded the ${activeMeetingData.name} knowledge base.`
+            ? `The host has loaded the ${activeMeetingData.name} knowledge base. Joining...`
             : statusMsg}
         </p>
 
@@ -140,13 +160,10 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
         </div>
 
         {isReadyToJoin ? (
-          <button
-            className="btn btn--primary btn--lg btn--full"
-            disabled={!participantName.trim() || isJoining}
-            onClick={() => handleJoin()}
-          >
-            {Icons.messageSquare} Join Chat
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 12, background: 'rgba(34,197,94,0.08)', borderRadius: 'var(--radius-lg)', border: '1px solid rgba(34,197,94,0.3)' }}>
+            <div className="spinner spinner--sm" />
+            <span style={{ fontSize: 13, color: 'var(--color-success)' }}>Joining {activeMeetingData.name} session...</span>
+          </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 12, background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--glass-border)' }}>
             <div className="spinner spinner--sm" />

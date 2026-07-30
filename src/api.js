@@ -314,39 +314,54 @@ export async function checkAnyActiveMeeting() {
   return getActiveMeeting();
 }
 
+/**
+ * Check if a SPECIFIC meeting is active by its ID.
+ * ONLY calls /status/{meeting_id} — NO discovery fallback.
+ * Use this when you have a real Zoom meeting_id.
+ */
+export async function checkMeetingStatusById(meetingId) {
+  if (!meetingId) return { success: true, active: false, meeting_id: null };
+  if (CONFIG.USE_MOCK_API) return MockApi.checkMeetingStatus(meetingId);
+
+  try {
+    const data = await _fetch('GET', `/status/${encodeURIComponent(meetingId)}`);
+    console.log('📡 checkMeetingStatusById response:', JSON.stringify(data));
+    let isActive = false;
+    if (data.status === true) {
+      isActive = true;
+    } else if (typeof data.status === 'string') {
+      const lower = data.status.toLowerCase().trim();
+      isActive = lower === 'true' || lower === 'active';
+    }
+    return {
+      success: true,
+      active: isActive,
+      company: data.company || null,
+      meeting_id: data.meeting_id || meetingId,
+      host_name: data.host_name || null,
+    };
+  } catch (err) {
+    console.warn('📡 checkMeetingStatusById error:', err.message);
+    return { success: true, active: false, meeting_id: meetingId };
+  }
+}
+
 // GET /status/{meeting_id}  →  check if meeting is active on backend
 export async function checkActiveMeeting(meetingId) {
   if (CONFIG.USE_MOCK_API) return MockApi.checkMeetingStatus(meetingId);
   const targetId = meetingId || getLastMeetingId();
-  
-  if (targetId) {
-    try {
-      const data = await _fetch('GET', `/status/${encodeURIComponent(targetId)}`);
-      console.log('📡 checkActiveMeeting response:', JSON.stringify(data));
-      let isActive = false;
-      if (data.status === true) {
-        isActive = true;
-      } else if (typeof data.status === 'string') {
-        const lower = data.status.toLowerCase().trim();
-        isActive = lower === 'true' || lower === 'active';
-      }
-      if (isActive) {
-        return {
-          success: true,
-          active: true,
-          company: data.company || null,
-          meeting_id: data.meeting_id || targetId,
-          host_name: data.host_name || null,
-        };
-      }
-    } catch (err) {
-      console.warn('📡 checkActiveMeeting specific check error:', err.message);
-    }
+
+  // If we have a real meeting_id (not a fallback), use direct /status check ONLY
+  const isFallbackId = !targetId || targetId.startsWith('fallback-') || targetId.startsWith('meeting-') || targetId.startsWith('mng-');
+
+  if (targetId && !isFallbackId) {
+    // Real meeting_id → ONLY check /status/{meeting_id}, no discovery
+    return checkMeetingStatusById(targetId);
   }
 
-  // Fallback: ONLY query /active_meeting discovery if NO targetId was provided
-  if (!targetId) {
-    console.log('🔍 Falling back to /active_meeting discovery (no targetId)...');
+  // No real meeting_id → try /active_meeting discovery as last resort
+  if (isFallbackId) {
+    console.log('🔍 No real meeting_id, falling back to /active_meeting discovery...');
     const activeDiscovery = await getActiveMeeting();
     if (activeDiscovery.active) {
       console.log('🎯 Active meeting discovered via backend:', activeDiscovery.meeting_id);

@@ -1,5 +1,15 @@
 /* ============================================
    MNG Bot — Splash View
+   
+   FLOW:
+   1. Init Zoom SDK → get meeting_id + user context
+   2. Check /status/{meeting_id} to see if THIS meeting is active
+   3. Determine role:
+      - SDK says host → host flow
+      - SDK says participant → participant flow
+      - SDK unknown + meeting active → auto-participant (host already started)
+      - SDK unknown + meeting NOT active → ask user (Host or Participant?)
+   4. Route accordingly
    ============================================ */
 import { useEffect, useState } from 'react';
 import { Icons } from '../components/Icons';
@@ -14,6 +24,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 export default function SplashView({ onComplete }) {
   const [statusText, setStatusText] = useState('Initializing...');
   const [needsManualRole, setNeedsManualRole] = useState(false);
+  // Store context & activeMeeting at component level so manual selection can use them
+  const [storedContext, setStoredContext] = useState(null);
+  const [storedActiveMeeting, setStoredActiveMeeting] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,7 +45,7 @@ export default function SplashView({ onComplete }) {
 
       if (!cancelled) setStatusText(`Welcome, ${context.user_name}`);
 
-      // Step 2: New meeting detection
+      // Step 2: New meeting detection — clear stale data from previous meetings
       const { isNew, previousUUID } = detectNewMeeting(context.meetingUUID);
       if (isNew && previousUUID) {
         console.log(`🔄 NEW MEETING DETECTED! Resetting backend and local session...`);
@@ -49,28 +62,30 @@ export default function SplashView({ onComplete }) {
         saveMeetingUUID(context.meetingUUID);
       }
 
-      // Step 3: Check backend active meeting status
+      // Step 3: Check if THIS SPECIFIC meeting is active on backend
+      // Use checkMeetingStatusById — NO generic /active_meeting discovery
       if (!cancelled) setStatusText('Checking meeting status...');
-      const { checkMeetingStatus, getActiveMeeting, CONFIG } = await import('../api');
+      const { checkMeetingStatusById, CONFIG } = await import('../api');
 
       let activeMeeting = null;
+      const meetingId = context.meeting_id;
+      const isRealMeetingId = meetingId && 
+        !meetingId.startsWith('fallback-') && 
+        !meetingId.startsWith('meeting-') && 
+        !meetingId.startsWith('mng-');
 
-      console.log(`🔍 Splash — meeting_id from Zoom SDK: "${context.meeting_id}"`);
-      try {
-        const res = await checkMeetingStatus(context.meeting_id);
-        console.log(`🔍 Splash — checkMeetingStatus response:`, JSON.stringify(res));
-        if (res.active && res.meeting_id) {
-          activeMeeting = res;
-        } else if (!context.meeting_id || context.meeting_id.startsWith('fallback-')) {
-          // ONLY query /active_meeting discovery endpoint if no specific meeting_id was provided
-          console.log(`🔍 Splash — Attempting /active_meeting discovery...`);
-          const discovery = await getActiveMeeting();
-          if (discovery.active && discovery.meeting_id) {
-            activeMeeting = discovery;
+      console.log(`🔍 Splash — meeting_id from Zoom SDK: "${meetingId}", isReal: ${isRealMeetingId}`);
+
+      if (isRealMeetingId) {
+        try {
+          const res = await checkMeetingStatusById(meetingId);
+          console.log(`🔍 Splash — checkMeetingStatusById response:`, JSON.stringify(res));
+          if (res.active && res.meeting_id) {
+            activeMeeting = res;
           }
+        } catch (err) {
+          console.warn('🔍 Splash — checkMeetingStatusById error:', err);
         }
-      } catch (err) {
-        console.warn('🔍 Splash — checkMeetingStatus error:', err);
       }
 
       // If an active meeting was found, align context meeting_id
@@ -89,21 +104,31 @@ export default function SplashView({ onComplete }) {
       if (cancelled || !onComplete) return;
 
       // ---------------------------------------------------------
-      // BULLETPROOF ROLE & ROUTING RULES:
+      // ROLE DETECTION & ROUTING RULES:
+      //
+      // Priority 1: Zoom SDK explicit role (when OAuth scopes are present)
+      // Priority 2: Meeting active on backend → auto-detect as participant
+      //             (host already started → this user is joining, hence participant)
+      // Priority 3: Meeting NOT active + unknown role → ask manually
       // ---------------------------------------------------------
       let isHost;
       if (context.explicitRole === false) {
+        // SDK says participant
         isHost = false;
       } else if (context.explicitRole === true) {
+        // SDK says host
         isHost = true;
       } else {
-        // Unknown SDK role (missing OAuth scopes).
-        // If activeMeeting exists, we can safely assume they are joining an active meeting.
+        // SDK role is unknown (null) — common without OAuth scopes
         if (activeMeeting) {
+          // Meeting is active → someone already started it → this user is a participant
+          console.log('🔍 Splash — Unknown role but meeting active → treating as participant');
           isHost = false;
         } else {
-          // WE DO NOT KNOW THE ROLE. Do NOT assume they are the Host.
-          // Pause and ask the user manually to prevent Testers from seeing Setup.
+          // Meeting NOT active AND role unknown → MUST ask the user
+          console.log('🔍 Splash — Unknown role and no active meeting → asking user');
+          setStoredContext(context);
+          setStoredActiveMeeting(null);
           setNeedsManualRole(true);
           return; // Stop here and wait for manual selection
         }
@@ -115,16 +140,36 @@ export default function SplashView({ onComplete }) {
     return () => { cancelled = true; };
   }, [onComplete]);
 
-  // Handle manual role selection when SDK fails
+  // Handle manual role selection when SDK fails to provide role
   const handleManualRole = async (selectedRoleIsHost) => {
     setNeedsManualRole(false);
     setStatusText('Routing...');
     
-    // We already know activeMeeting is null if we reached here
-    const context = await import('../zoom').then(m => m.getMeetingContext());
+    const context = storedContext || await import('../zoom').then(m => m.getMeetingContext());
     context.is_host = selectedRoleIsHost;
     context.isHost = selectedRoleIsHost;
     context.user_role = selectedRoleIsHost ? 'host' : 'participant';
+
+    if (!selectedRoleIsHost) {
+      // User said "I am a Participant" — check once more if meeting started in the meantime
+      const { checkMeetingStatusById } = await import('../api');
+      const meetingId = context.meeting_id;
+      const isRealMeetingId = meetingId && 
+        !meetingId.startsWith('fallback-') && 
+        !meetingId.startsWith('meeting-') && 
+        !meetingId.startsWith('mng-');
+
+      if (isRealMeetingId) {
+        try {
+          const res = await checkMeetingStatusById(meetingId);
+          if (res.active && res.meeting_id) {
+            // Meeting is now active — route participant with meeting data
+            routeUser(false, res, context);
+            return;
+          }
+        } catch (_) {}
+      }
+    }
 
     routeUser(selectedRoleIsHost, null, context);
   };
@@ -138,7 +183,7 @@ export default function SplashView({ onComplete }) {
     console.log(`🎯 Route Decision: isHost=${isHost}, activeMeeting=${!!activeMeeting}, explicitRole=${context.explicitRole}`);
 
     if (activeMeeting) {
-      // Active meeting exists -> Directly into Chat
+      // Active meeting exists → resolve company info
       const companyName = activeMeeting.company || 'Biocon';
       const matched = CONFIG.COMPANIES.find(
         c => c.name.toLowerCase() === companyName.toLowerCase()
@@ -149,25 +194,25 @@ export default function SplashView({ onComplete }) {
       };
 
       if (isHost) {
-        console.log('✅ Host -> Chat + Dashboard');
+        console.log('✅ Host → Chat + Dashboard (resume)');
         onComplete(context, companyInfo, 'host-resume');
       } else {
         const hasJoinedInSession = sessionStorage.getItem('mng_participant_joined') === 'true';
         if (hasJoinedInSession) {
-          console.log('✅ Participant (already joined in session) -> Chat directly');
+          console.log('✅ Participant (already joined in session) → Chat directly');
           onComplete(context, companyInfo, 'participant');
         } else {
-          console.log('✅ Participant (first time) -> Waiting / Join View');
+          console.log('✅ Participant (first time) → Username confirm then auto-join');
           onComplete(context, companyInfo, 'participant-setup');
         }
       }
     } else {
       // No active meeting on backend yet
       if (isHost) {
-        console.log('✅ Host -> Setup View (Company selection)');
+        console.log('✅ Host → Setup View (Company selection)');
         onComplete(context, null, 'host');
       } else {
-        console.log('✅ Participant -> Waiting View');
+        console.log('✅ Participant → Waiting View (host has not started)');
         onComplete(context, null, 'waiting');
       }
     }

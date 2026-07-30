@@ -43,23 +43,20 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
 
     const checkStatus = async () => {
       try {
-        const isRealMeetingId = meetingId && 
-          !meetingId.startsWith('fallback-') && 
-          !meetingId.startsWith('meeting-') && 
-          !meetingId.startsWith('mng-');
-
         let res = null;
-        if (isRealMeetingId) {
-          res = await checkMeetingStatusById(meetingId);
-        } else {
-          // If no real meeting ID, fallback to /active_meeting discovery
-          res = await checkMeetingStatusById(meetingId);
-          if (!res?.active) {
-            const discovery = await getActiveMeeting();
+        if (meetingId) {
+          try {
+            res = await checkMeetingStatusById(meetingId);
+          } catch (_) {}
+        }
+
+        if (!res?.active) {
+          try {
+            const discovery = await getActiveMeeting({ meeting_id: meetingId });
             if (discovery?.active) {
               res = discovery;
             }
-          }
+          } catch (_) {}
         }
 
         if (res?.active && isMounted) {

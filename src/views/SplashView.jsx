@@ -68,15 +68,7 @@ export default function SplashView({ onComplete }) {
 
       let activeMeeting = null;
       const meetingId = context.meeting_id;
-      const isRealMeetingId = meetingId && 
-        !meetingId.startsWith('fallback-') && 
-        !meetingId.startsWith('meeting-') && 
-        !meetingId.startsWith('mng-');
-
-      console.log(`🔍 Splash — meeting_id from Zoom SDK: "${meetingId}", isReal: ${isRealMeetingId}`);
-
-      if (isRealMeetingId) {
-        // Real Zoom meeting_id → check ONLY this specific meeting (multi-meeting safe)
+      if (meetingId) {
         try {
           const res = await checkMeetingStatusById(meetingId);
           console.log(`🔍 Splash — checkMeetingStatusById response:`, JSON.stringify(res));
@@ -86,16 +78,15 @@ export default function SplashView({ onComplete }) {
         } catch (err) {
           console.warn('🔍 Splash — checkMeetingStatusById error:', err);
         }
-      } else {
-        // No real meeting_id (browser mode / SDK failure) → use /active_meeting discovery
-        // This works when there's 1 active meeting; with multiple it returns active:false
-        console.log('🔍 Splash — No real meeting_id, trying /active_meeting discovery...');
+      }
+
+      if (!activeMeeting) {
+        console.log('🔍 Splash — Meeting not found by exact ID, trying /active_meeting discovery...');
         try {
-          const discovery = await getActiveMeeting();
+          const discovery = await getActiveMeeting({ meeting_id: meetingId });
           console.log(`🔍 Splash — getActiveMeeting response:`, JSON.stringify(discovery));
           if (discovery.active && discovery.meeting_id) {
             activeMeeting = discovery;
-            // Update context with the discovered meeting_id
             context.meeting_id = discovery.meeting_id;
             context.meetingUUID = discovery.meeting_id;
           }
@@ -154,21 +145,19 @@ export default function SplashView({ onComplete }) {
       // User said "I am a Participant" — check if meeting started
       const { checkMeetingStatusById, getActiveMeeting } = await import('../api');
       const meetingId = context.meeting_id;
-      const isRealMeetingId = meetingId && 
-        !meetingId.startsWith('fallback-') && 
-        !meetingId.startsWith('meeting-') && 
-        !meetingId.startsWith('mng-');
 
-      if (isRealMeetingId) {
+      if (meetingId) {
         try {
           const res = await checkMeetingStatusById(meetingId);
           if (res.active && res.meeting_id) {
             activeMeeting = res;
           }
         } catch (_) {}
-      } else {
+      }
+
+      if (!activeMeeting) {
         try {
-          const discovery = await getActiveMeeting();
+          const discovery = await getActiveMeeting({ meeting_id: meetingId });
           if (discovery.active && discovery.meeting_id) {
             context.meeting_id = discovery.meeting_id;
             context.meetingUUID = discovery.meeting_id;

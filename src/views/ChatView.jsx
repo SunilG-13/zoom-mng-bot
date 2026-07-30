@@ -152,7 +152,7 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
         question,
         context?.user_role || (isHost ? 'host' : 'participant'),
         context?.participant_id,
-        meetingInfo?.companyName || 'Biocon'
+        meetingInfo?.companyName || 'Company'
       );
 
       setIsTyping(false);
@@ -216,7 +216,8 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
         senderName,
         suggestion,
         context?.user_role || (isHost ? 'host' : 'participant'),
-        context?.participant_id
+        context?.participant_id,
+        meetingInfo?.companyName || 'Company'
       )
         .then(result => {
           setIsTyping(false);
@@ -236,7 +237,9 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
           if (isHost) {
             getAllQuestions(context.meeting_id).then(data => {
               if (data?.questions) {
-                window.dispatchEvent(new CustomEvent('mng-logs-updated', { detail: data.questions }));
+                window.dispatchEvent(new CustomEvent('mng-logs-updated', {
+                  detail: { meeting_id: context?.meeting_id, questions: data.questions }
+                }));
               }
             }).catch(() => {});
           }

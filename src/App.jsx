@@ -226,6 +226,8 @@ function AppInner() {
       isHost: true,
       meeting_id: targetMeetingId || prev?.meeting_id,
     }));
+    // Bump generation so ChatView & DashboardView remount with clean state
+    setResetGeneration(prev => prev + 1);
     setCurrentView('chat');
   }, [context]);
 
@@ -258,6 +260,7 @@ function AppInner() {
       isHost: false,
       meeting_id: targetMeetingId,
     }));
+    setResetGeneration(prev => prev + 1);
     setCurrentView('chat');
   }, [context]);
 
@@ -296,6 +299,9 @@ function AppInner() {
   const isInMeeting = currentView === 'chat' || currentView === 'dashboard';
 
   const handleChangeCompany = useCallback(() => {
+    setMeetingInfo({ company: null, companyName: null });
+    setPendingCount(0);
+    setExportLogs([]);
     setCurrentView('setup');
   }, []);
 

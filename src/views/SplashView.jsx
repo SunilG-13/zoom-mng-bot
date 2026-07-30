@@ -194,7 +194,7 @@ export default function SplashView({ onComplete }) {
       const hasHostStartedSession = sessionStorage.getItem('mng_host_started') === 'true';
       if (hasHostStartedSession && activeMeeting) {
         // Host has already started meeting in this active browser session → resume Chat+Dashboard
-        const companyName = activeMeeting.company || 'Biocon';
+        const companyName = activeMeeting.company || 'Company';
         const matched = CONFIG.COMPANIES.find(
           c => c.name.toLowerCase() === companyName.toLowerCase()
         );
@@ -220,7 +220,7 @@ export default function SplashView({ onComplete }) {
           saveMeetingUUID(activeMeeting.meeting_id);
         }
 
-        const companyName = activeMeeting.company || 'Biocon';
+        const companyName = activeMeeting.company || 'Company';
         const matched = CONFIG.COMPANIES.find(
           c => c.name.toLowerCase() === companyName.toLowerCase()
         );

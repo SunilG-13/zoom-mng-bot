@@ -152,7 +152,11 @@ export function completeSessionReset() {
   } catch {}
 
   // Clear session storage completely
-  try { sessionStorage.clear(); } catch {}
+  try {
+    sessionStorage.removeItem('mng_host_started');
+    sessionStorage.removeItem('mng_participant_joined');
+    sessionStorage.clear();
+  } catch {}
 
   console.log('🧹 Complete session reset done (all storage cleared)');
 }

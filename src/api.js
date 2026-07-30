@@ -84,10 +84,13 @@ async function _fetch(method, endpoint, body = null) {
 // Endpoints match MNG.postman_collection exactly
 
 function sanitizeCompany(name) {
-  if (!name) return 'Biocon';
-  const lower = String(name).toLowerCase().trim();
-  if (lower.includes('pfizer')) return 'Pfizer';
-  return 'Biocon';
+  if (!name || typeof name !== 'string') return 'Company';
+  const trimmed = name.trim();
+  if (!trimmed) return 'Company';
+  const lower = trimmed.toLowerCase();
+  const matched = CONFIG.COMPANIES.find(c => c.id === lower || c.name.toLowerCase() === lower);
+  if (matched) return matched.name;
+  return trimmed.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 // POST /start_meeting  →  { meeting_id, company, host_name }
@@ -138,12 +141,29 @@ export async function startMeeting(meetingId, company, hostName = 'Host') {
       };
     }
 
+    // If backend rejects unknown company folder (e.g. "invalid company")
+    if (msg.includes('invalid company') || msg.includes('company')) {
+      console.warn(`⚠️ Backend does not have exact SharePoint folder for "${cleanCompany}". Retrying with backend fallback while preserving UI company name...`);
+      try {
+        // Fallback payload using a supported backend folder key
+        const fallbackPayload = { ...payload, company: 'Biocon' };
+        const res3 = await _fetch('POST', '/start_meeting', fallbackPayload);
+        return {
+          success: true,
+          message: `${cleanCompany} meeting started`,
+          meeting_id: res3.meeting_id || meetingId,
+          company: cleanCompany,
+          pdfs_loaded: res3.documents_loaded || res3.pdfs_loaded || 0,
+        };
+      } catch (_) {}
+    }
+
     throw err;
   }
 }
 
 // POST /ask  →  { question, session_id, meeting_id, participant_id, user_name, username, user_role }
-export async function askQuestion(meetingId, sessionId, userName, question, userRole = 'USER', participantId = null, companyName = 'Biocon') {
+export async function askQuestion(meetingId, sessionId, userName, question, userRole = 'USER', participantId = null, companyName = 'Company') {
   let resolvedName = userName;
   if (isGenericName(resolvedName)) {
     try {

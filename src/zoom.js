@@ -2,7 +2,7 @@
    MNG Bot — Zoom Apps SDK Integration
    ============================================ */
 import zoomSdk from '@zoom/appssdk';
-import { getLastMeetingId, isGenericName } from './utils/meetingStorage';
+import { isGenericName } from './utils/meetingStorage';
 
 let _sdkReady = false;
 let _configResult = null;
@@ -44,10 +44,10 @@ export async function initZoom() {
     }
 
     return _configResult;
-  } catch (err) {
-    console.warn('⚠️ Zoom SDK not available:', err.message);
+  } catch (error) {
+    console.warn('⚠️ Zoom SDK initialization warning:', error.message);
     _sdkReady = false;
-    _initError = err.message;
+    _initError = error.message;
     return null;
   }
 }
@@ -150,7 +150,6 @@ async function _getMeetingContextWithRetry(maxAttempts = 3) {
       const uuid = meetingContext?.meetingUUID || meetingContext?.meetingID || meetingContext?.meetingId;
       if (uuid) return meetingContext;
 
-      // If getMeetingUUID capability is present, try calling it directly
       if (typeof zoomSdk.getMeetingUUID === 'function') {
         try {
           const directUUID = await zoomSdk.getMeetingUUID();
@@ -181,7 +180,6 @@ async function _getMeetingContextWithRetry(maxAttempts = 3) {
 function findScreenNameInObject(obj, depth = 0) {
   if (!obj || typeof obj !== 'object' || depth > 4) return null;
 
-  // 1. Direct property check for screen name keys
   const keys = Object.keys(obj);
   for (const k of keys) {
     const val = obj[k];
@@ -203,14 +201,12 @@ function findScreenNameInObject(obj, depth = 0) {
     }
   }
 
-  // 2. First name + last name combination
   const first = (obj.firstName || obj.first_name || obj.givenName || obj.first || '').trim();
   const last = (obj.lastName || obj.last_name || obj.familyName || obj.last || '').trim();
   if ((first || last) && !isGenericName(`${first} ${last}`.trim())) {
     return `${first} ${last}`.trim();
   }
 
-  // 3. Recurse into child objects & arrays
   for (const k of keys) {
     const val = obj[k];
     if (val && typeof val === 'object' && !Array.isArray(val)) {
@@ -233,7 +229,6 @@ function findScreenNameInObject(obj, depth = 0) {
  * Extract display name from all potential Zoom SDK objects, URL params, and local storage.
  */
 function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParticipant = {}, configResult = {}, userObj = {}, participantsList = []) {
-  // 1. Check URL parameters
   const params = new URLSearchParams(window.location.search);
   const urlName = params.get('username') || params.get('user_name') || params.get('name') || params.get('screenName') || params.get('displayName') || params.get('participantName');
   if (urlName && !isGenericName(urlName)) {
@@ -241,7 +236,6 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
     return urlName.trim();
   }
 
-  // 2. Scan all Zoom SDK sources deeply
   const sources = [
     userObj,
     matchedParticipant,
@@ -261,7 +255,6 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
     }
   }
 
-  // 3. Fallback to previously stored user name
   try {
     const saved = localStorage.getItem('mng_user_name');
     if (saved && !isGenericName(saved)) {
@@ -269,7 +262,6 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
     }
   } catch { }
 
-  // 4. Default if nothing found
   return _isGuestMode ? 'Guest User' : 'Zoom User';
 }
 
@@ -299,7 +291,6 @@ export async function getMeetingContext() {
       }
     }
 
-    // Evaluate role from all available SDK fields
     let roleDecision = _evaluateRole(userContext.role);
     let roleSource = `userContext.role="${userContext.role}"`;
 
@@ -323,7 +314,6 @@ export async function getMeetingContext() {
       if (roleDecision !== null) roleSource = `userContext.status`;
     }
 
-    // Check hostUUID vs participantUUID match
     if (roleDecision === null && meetingContext.hostUUID && (userContext.participantUUID || userContext.participantId)) {
       const pUUID = userContext.participantUUID || userContext.participantId;
       if (meetingContext.hostUUID === pUUID) {
@@ -350,23 +340,33 @@ export async function getMeetingContext() {
       } catch (_) {}
     }
 
-    const resolvedMeetingId = zoomMeetingId || (meetingNumber ? String(meetingNumber) : `meeting-${Date.now()}`);
+    const meetingUUID = zoomMeetingId || (meetingNumber ? String(meetingNumber) : null);
+    if (!meetingUUID) {
+      console.warn("⚠️ Zoom meeting UUID not available from SDK context — using fallback context");
+      return _getFallbackContext();
+    }
+
+    const pUUID = userContext.participantUUID || userContext.participantId || userObj.participantUUID || matchedParticipant?.participantUUID;
+    const participantUUID = pUUID || 'participant_' + crypto.randomUUID();
+
+    let session_id = sessionStorage.getItem("mng_session_id");
+    if (!session_id) {
+      session_id = crypto.randomUUID();
+      sessionStorage.setItem("mng_session_id", session_id);
+    }
 
     return {
-      meeting_id: resolvedMeetingId,
-      meetingUUID: resolvedMeetingId,
+      meetingUUID: meetingUUID,
+      meeting_id: meetingUUID,
+      session_id: session_id,
+      participant_id: participantUUID,
       meetingNumber: meetingNumber,
-      participant_id: userContext.participantUUID || userContext.participantId || userObj.participantUUID || null,
       user_name: displayName,
       user_email: userContext.email || userObj.email || null,
-      // explicitRole is true (host), false (participant), or null (unknown)
       explicitRole: roleDecision,
       isHost: roleDecision === true,
       is_host: roleDecision === true,
       is_guest: _isGuestMode,
-      // Include timestamp to ensure unique session per meeting instance
-      // (participantUUID alone is static — reused across meetings)
-      session_id: 'zoom_' + (userContext.participantUUID || userObj.participantUUID || crypto.randomUUID()) + '_' + Date.now(),
       _debug: {
         userContextRole: userContext.role,
         roleSource: roleSource,
@@ -385,7 +385,7 @@ function _getFallbackContext() {
   const role = params.get('role') || '';
   const explicitRole = _evaluateRole(role);
   const userName = params.get('username') || params.get('user_name') || params.get('name') || params.get('screenName') || params.get('displayName') || params.get('participantName') || '';
-  const meetingId = params.get('meeting_id') || 'mng_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
+  const meetingId = params.get('meeting_id') || 'dev_meeting_12345';
 
   let resolvedName = userName.trim();
   if (isGenericName(resolvedName)) {
@@ -401,10 +401,16 @@ function _getFallbackContext() {
     resolvedName = explicitRole === true ? 'Test Host' : 'Test User';
   }
 
+  let session_id = sessionStorage.getItem("mng_session_id");
+  if (!session_id) {
+    session_id = crypto.randomUUID();
+    sessionStorage.setItem("mng_session_id", session_id);
+  }
+
   return {
     meeting_id: meetingId,
     meetingUUID: meetingId,
-    participant_id: null,
+    participant_id: 'browser_participant',
     user_name: resolvedName,
     user_email: null,
     explicitRole: explicitRole,
@@ -412,7 +418,7 @@ function _getFallbackContext() {
     isHost: explicitRole === true,
     is_guest: true,
     is_browser: true,
-    session_id: 'browser_' + crypto.randomUUID(),
+    session_id: session_id,
     _debug: { roleSource: 'browser-fallback', userContextRole: role },
   };
 }

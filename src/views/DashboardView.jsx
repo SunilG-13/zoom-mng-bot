@@ -1,6 +1,9 @@
 /* ============================================
    MNG Bot — Dashboard View (Host Only)
    Filter by Status + Filter by User + Excel Export
+   
+   Uses context.meeting_id (user-entered) for ALL API calls.
+   Shows: Participant Name, Question, AI Answer, Status, Timestamp.
    ============================================ */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Icons } from '../components/Icons';
@@ -40,21 +43,6 @@ function normalizeStatus(s) {
   return 'Unresolved';
 }
 
-function exportToCSV(rows, headers, filename) {
-  const escape = (val) => {
-    const str = String(val ?? '');
-    return (str.includes(',') || str.includes('"') || str.includes('\n'))
-      ? '"' + str.replace(/"/g, '""') + '"' : str;
-  };
-  const csv = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))].join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-}
-
 const TABS = [
   { key: 'all',        label: 'All' },
   { key: 'Resolved',   label: 'Resolved' },
@@ -63,7 +51,7 @@ const TABS = [
   { key: 'pending',    label: 'Pending' },
 ];
 
-export default function DashboardView({ context, meetingInfo, onNavigate, onEndMeeting, onChangeCompany, onExport, onLogsUpdated, onClosePanel }) {
+export default function DashboardView({ context, meetingInfo, onNavigate, onEndMeeting, onChangeCompany, onExport, onLogsUpdated }) {
   const [activeTab,    setActiveTab]    = useState('all');
   const [selectedUser, setSelectedUser] = useState('all');
   const [logs,         setLogs]         = useState([]);
@@ -96,10 +84,14 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
     return result;
   }, [logs, activeTab, selectedUser]);
 
+  // Use user-entered meeting_id
+  const meetingId = context?.meeting_id;
+
   const loadData = useCallback(async (showSpinner = false) => {
+    if (!meetingId) return;
     if (showSpinner) setIsRefreshing(true);
     try {
-      const data = await getAllQuestions(context.meeting_id);
+      const data = await getAllQuestions(meetingId);
       if (data?.questions) {
         setLogs(data.questions);
         if (onLogsUpdated) onLogsUpdated(data.questions);
@@ -108,18 +100,18 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
       if (showSpinner) toast.error('Failed to load questions');
     }
     if (showSpinner) setTimeout(() => setIsRefreshing(false), 500);
-  }, [context.meeting_id, toast, onLogsUpdated]);
+  }, [meetingId, toast, onLogsUpdated]);
 
   useEffect(() => {
     loadData();
     const handler = (e) => {
       if (e.detail) {
-        // If event contains meeting_id, ensure it matches current meeting context
-        const eventMeetingId = e.detail.meeting_id || e.detail.meetingId;
+        // Ensure event matches current meeting_id
+        const eventMeetingId = e.detail.meeting_id || e.detail.meetingUUID || e.detail.meetingId;
         const questionsList = Array.isArray(e.detail) ? e.detail : e.detail.questions;
 
-        if (eventMeetingId && context?.meeting_id && eventMeetingId !== context.meeting_id) {
-          console.log(`🛡️ DashboardView ignored mng-logs-updated event for meeting_id=${eventMeetingId} (current: ${context.meeting_id})`);
+        if (eventMeetingId && meetingId && eventMeetingId !== meetingId) {
+          console.log(`🛡️ DashboardView ignored mng-logs-updated event for meeting=${eventMeetingId} (current: ${meetingId})`);
           return;
         }
 
@@ -131,7 +123,7 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
     };
     window.addEventListener('mng-logs-updated', handler);
     return () => window.removeEventListener('mng-logs-updated', handler);
-  }, [loadData, onLogsUpdated, context?.meeting_id]);
+  }, [loadData, onLogsUpdated, meetingId]);
 
   useEffect(() => {
     pollRef.current = setInterval(() => loadData(), 3000);
@@ -146,7 +138,6 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
       return;
     }
     if (onExport) {
-      // Pass the filtered logs so the Excel download matches the current filters
       onExport(filteredLogs);
     }
   };
@@ -159,7 +150,7 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
           <div>
             <span className="app-header__title">Host Dashboard</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
-              <span>🏢 {meetingInfo?.companyName || 'Meeting'} &bull; {total} Q&A</span>
+              <span>🏢 {meetingInfo?.companyName || 'Meeting'} &bull; {meetingId} &bull; {total} Q&A</span>
               {onChangeCompany && (
                 <button
                   className="btn btn--ghost btn--xs"
@@ -178,7 +169,6 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
             {Icons.messageSquare}<span>Chat</span>
           </button>
           <button className="btn btn--danger btn--sm" onClick={onEndMeeting} title="End Meeting">{Icons.power}<span>End</span></button>
-          {onClosePanel && (<button className="btn btn--ghost" onClick={onClosePanel} style={{ padding: 4, marginLeft: 4 }}>{Icons.x}</button>)}
         </div>
       </div>
 
@@ -276,11 +266,13 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
                               <div style={{ flex: 1 }}>
                                 <div className="expanded-row__label">Question</div>
                                 <p style={{ marginBottom: 'var(--space-3)', color: 'var(--color-text-primary)' }}>{q.question}</p>
-                                <div className="expanded-row__label">Answer</div>
-                                <p style={{ marginBottom: 0, lineHeight: 1.6 }}>{q.answer}</p>
+                                <div className="expanded-row__label">AI Answer</div>
+                                <p style={{ marginBottom: 0, lineHeight: 1.6 }}>{q.answer || 'No answer recorded.'}</p>
                               </div>
                               <div style={{ minWidth: 110, fontSize: 11, color: 'var(--color-text-muted)' }}>
                                 <div style={{ marginBottom: 4 }}>User: {q.user_name || q.username || 'Participant'}</div>
+                                <div style={{ marginBottom: 4 }}>Role: {q.user_role || 'participant'}</div>
+                                <div style={{ marginBottom: 4 }}>Session: {truncate(q.session_id || '', 10)}</div>
                                 <div style={{ marginBottom: 6 }}>{formatTimestamp(q.timestamp)}</div>
                                 <span className={'status-badge status-badge--' + ns.toLowerCase()} style={{ fontSize: 10 }}>
                                   {statusIcons[ns]} {ns}

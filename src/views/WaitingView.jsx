@@ -1,115 +1,62 @@
 /* ============================================
    MNG Bot — Waiting View
+
+   Shows when participant joins before host has started.
+   Polls GET /status/{meeting_id} until host starts.
+   Once active → auto-navigates participant to Chat.
    
-   Shows when participant opens bot before host has started.
-   Polls /status/{meeting_id} and relay until the host starts.
-   Once active → auto-joins the participant.
-   
-   STRICT ISOLATION: Only checks THIS participant's meeting_id.
-   Never falls back to discovery to prevent cross-contamination.
+   STRICT ISOLATION: Only checks the user-entered meeting_id.
+   Never falls back to discovery or guessing.
    ============================================ */
 import { useEffect, useState, useRef } from 'react';
 import { checkMeetingStatusById } from '../api';
-import { saveMeetingId, saveMeetingUUID, isGenericName, getLastMeetingId } from '../utils/meetingStorage';
 import { Icons } from '../components/Icons';
 
-export default function WaitingView({ context, onMeetingActive, onClosePanel }) {
-  const autoName = (!isGenericName(context?.user_name))
-    ? context.user_name
-    : (localStorage.getItem('mng_participant_user_name') || 'Guest User');
-
-  const [participantName, setParticipantName] = useState(autoName);
+export default function WaitingView({ meetingId, participantName, onMeetingActive, onBack }) {
   const [statusMsg, setStatusMsg] = useState('Checking host status...');
-  const [activeMeetingData, setActiveMeetingData] = useState(null);
   const [isJoining, setIsJoining] = useState(false);
-
   const onMeetingActiveRef = useRef(onMeetingActive);
   onMeetingActiveRef.current = onMeetingActive;
-
-  // Sync auto-detected username if Zoom SDK context arrives later
-  useEffect(() => {
-    if (context?.user_name && !isGenericName(context.user_name)) {
-      setParticipantName(context.user_name);
-    }
-  }, [context?.user_name]);
 
   useEffect(() => {
     let isMounted = true;
     let timer = null;
 
-    const meetingId = context?.meetingUUID || context?.meeting_id || context?.meetingNumber;
-    const isFallbackId = !meetingId || meetingId.startsWith('fallback-') || meetingId.startsWith('mng-') || meetingId.startsWith('mng_') || meetingId.startsWith('browser_') || meetingId.startsWith('meeting-');
-    console.log(`⏳ WaitingView: Polling for meeting_id="${meetingId}" (isFallback=${isFallbackId})`);
+    if (!meetingId) {
+      console.warn('⏳ WaitingView: No meetingId provided — skipping polling');
+      setStatusMsg('No Meeting ID provided.');
+      return;
+    }
+
+    console.log(`⏳ WaitingView: Polling for meetingId="${meetingId}"`);
 
     const checkStatus = async () => {
       try {
-        let res = null;
+        const res = await checkMeetingStatusById(meetingId);
+        console.log(`⏳ WaitingView: checkMeetingStatusById("${meetingId}") =>`, JSON.stringify(res));
 
-        // Strictly check status for THIS meeting ID
-        if (meetingId) {
-          try {
-            res = await checkMeetingStatusById(meetingId);
-            console.log(`⏳ WaitingView: checkMeetingStatusById("${meetingId}") =>`, JSON.stringify(res));
-          } catch (e) {
-            console.warn('⏳ WaitingView: checkMeetingStatusById error:', e.message);
+        const isStarted = res?.active === true || res?.status === true;
+
+        if (isStarted && isMounted) {
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
           }
-        }
 
-        // Strategy 2: Try getActiveMeeting with meeting_id for matching
-        if (!res?.active) {
-          try {
-            const discovery = await getActiveMeeting({ meeting_id: meetingId });
-            console.log(`⏳ WaitingView: getActiveMeeting() =>`, JSON.stringify(discovery));
-            if (discovery?.active) {
-              res = discovery;
-            }
-          } catch (e) {
-            console.warn('⏳ WaitingView: getActiveMeeting error:', e.message);
-          }
-        }
-
-        // Strategy 3: Check relay with fuzzy matching against meetingId
-        if (!res?.active && meetingId) {
-          try {
-            const relayRes = await fetch('/relay/meeting');
-            if (relayRes.ok) {
-              const relayData = await relayRes.json();
-              const meetings = relayData.meetings || [];
-              const match = meetings.find(m =>
-                m.meeting_id === meetingId ||
-                m.zoom_meeting_id === meetingId ||
-                (m.meeting_id && meetingId && (m.meeting_id.includes(meetingId) || meetingId.includes(m.meeting_id)))
-              );
-              if (match) {
-                res = { active: true, meeting_id: match.meeting_id, company: match.company, host_name: match.host_name };
-                console.log(`⏳ WaitingView: Fuzzy relay match → ${match.company}`);
-              }
-            }
-          } catch (e) {
-            console.warn('⏳ WaitingView: Direct relay fallback error:', e.message);
-          }
-        }
-
-        if (res?.active && isMounted) {
-          const activeMeetingId = res.meeting_id || meetingId;
-          const meetingData = {
-            id: (res.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
-            name: res.company || 'Meeting',
-            company: res.company,
-            meeting_id: activeMeetingId,
-          };
-          setActiveMeetingData(meetingData);
           setStatusMsg(`Host is active (${res.company || 'Meeting'})`);
+          setIsJoining(true);
 
-          if (timer) clearInterval(timer);
-          timer = null;
+          // Small delay for visual feedback, then auto-join
           setTimeout(() => {
-            if (isMounted) {
-              autoJoin(meetingData);
+            if (isMounted && onMeetingActiveRef.current) {
+              onMeetingActiveRef.current({
+                meeting_id: res.meeting_id || meetingId,
+                company: res.company || 'Meeting',
+                host_name: res.host_name || 'Host',
+              });
             }
           }, 500);
         } else if (isMounted) {
-          setActiveMeetingData(null);
           setStatusMsg('Host has not started yet — waiting for host to start...');
         }
       } catch (err) {
@@ -118,95 +65,86 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
       }
     };
 
+    // Initial check + interval polling
     checkStatus();
-    timer = setInterval(() => checkStatus(), 3000);
+    timer = setInterval(checkStatus, 2000);
 
     return () => {
       isMounted = false;
       if (timer) clearInterval(timer);
     };
-  }, [context?.meeting_id]);
+  }, [meetingId]);
 
-  const autoJoin = (targetData) => {
-    if (isJoining) return;
-    setIsJoining(true);
-
-    const finalName = participantName.trim() || 'Guest User';
-
+  const handleManualCheck = async () => {
+    if (!meetingId) return;
     try {
-      localStorage.setItem('mng_participant_user_name', finalName);
-      sessionStorage.setItem('mng_participant_joined', 'true');
+      const res = await checkMeetingStatusById(meetingId);
+      const isStarted = res?.active === true || res?.status === true;
+
+      if (isStarted) {
+        setIsJoining(true);
+        setTimeout(() => {
+          if (onMeetingActiveRef.current) {
+            onMeetingActiveRef.current({
+              meeting_id: res.meeting_id || meetingId,
+              company: res.company || 'Meeting',
+              host_name: res.host_name || 'Host',
+            });
+          }
+        }, 300);
+      }
     } catch (_) {}
-
-    if (context) {
-      context.user_name = finalName;
-    }
-
-    if (targetData.meeting_id) {
-      saveMeetingId(targetData.meeting_id);
-      if (context?.meetingUUID) {
-        saveMeetingUUID(context.meetingUUID);
-      }
-      if (context) {
-        context.meeting_id = targetData.meeting_id;
-      }
-    }
-
-    if (onMeetingActiveRef.current) {
-      onMeetingActiveRef.current(targetData, finalName, targetData.meeting_id);
-    }
   };
-
-  const handleJoin = (targetData) => {
-    const data = targetData || activeMeetingData;
-    if (!data || isJoining) return;
-    autoJoin(data);
-  };
-
-  const isReadyToJoin = !!activeMeetingData;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--color-bg-primary)' }}>
       <div className="app-header">
         <div className="app-header__left">
+          <button
+            className="btn btn--ghost btn--sm"
+            onClick={onBack}
+            style={{ padding: '4px 8px', marginRight: 4 }}
+            title="Back"
+          >
+            ← Back
+          </button>
           <div className="app-header__logo">{Icons.bot}</div>
           <span className="app-header__title">MNG Bot</span>
         </div>
         <div className="app-header__right">
           <span style={{ fontSize: 11, color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            {Icons.user} {participantName.trim() || 'Guest User'}
+            {Icons.user} {participantName || 'Participant'}
           </span>
         </div>
       </div>
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '24px 16px', overflowY: 'auto' }}>
         <h2 style={{ fontSize: 18, color: 'var(--color-text-primary)', marginBottom: 6, textAlign: 'center' }}>
-          {isReadyToJoin ? 'Joining Session... 🚀' : 'Waiting for Host... ⏳'}
+          {isJoining ? 'Joining Session... 🚀' : 'Waiting for Host... ⏳'}
         </h2>
-        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center', marginBottom: 24, lineHeight: 1.5 }}>
-          {isReadyToJoin
-            ? `The host has loaded the ${activeMeetingData.name} knowledge base. Joining...`
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center', marginBottom: 12, lineHeight: 1.5 }}>
+          {isJoining
+            ? 'The host has started the meeting. Joining now...'
             : statusMsg}
         </p>
 
-        <label style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6, display: 'block' }}>
-          Your Display Name
-        </label>
-        <div className="search-input" style={{ marginBottom: 20 }}>
-          <span className="search-input__icon">{Icons.user}</span>
-          <input
-            type="text"
-            placeholder="e.g. Alex Smith"
-            value={participantName}
-            onChange={e => setParticipantName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && isReadyToJoin && handleJoin()}
-          />
+        <div style={{
+          textAlign: 'center',
+          fontSize: 12,
+          color: 'var(--color-accent-blue)',
+          marginBottom: 24,
+          padding: '6px 12px',
+          background: 'rgba(79,124,255,0.08)',
+          borderRadius: 'var(--radius-md)',
+          border: '1px solid rgba(79,124,255,0.2)',
+        }}>
+          Meeting ID: <strong>{meetingId}</strong>
         </div>
 
-        {isReadyToJoin ? (
+        {isJoining ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 12, background: 'rgba(34,197,94,0.08)', borderRadius: 'var(--radius-lg)', border: '1px solid rgba(34,197,94,0.3)' }}>
             <div className="spinner spinner--sm" />
-            <span style={{ fontSize: 13, color: 'var(--color-success)' }}>Joining {activeMeetingData.name} session...</span>
+            <span style={{ fontSize: 13, color: 'var(--color-success)' }}>Joining session...</span>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -216,62 +154,12 @@ export default function WaitingView({ context, onMeetingActive, onClosePanel }) 
             </div>
             <button
               className="btn btn--secondary btn--sm btn--full"
-              onClick={async () => {
-                const { checkMeetingStatusById, getActiveMeeting } = await import('../api');
-                const myId = context?.meetingUUID || context?.meeting_id || context?.meetingNumber;
-                let activeRes = null;
-
-                if (myId) {
-                  try {
-                    const res = await checkMeetingStatusById(myId);
-                    if (res?.active) activeRes = res;
-                  } catch (_) {}
-                }
-
-                if (!activeRes?.active) {
-                  try {
-                    const discovery = await getActiveMeeting({ meeting_id: myId });
-                    if (discovery?.active) activeRes = discovery;
-                  } catch (_) {}
-                }
-
-                if (!activeRes?.active && myId) {
-                  try {
-                    const relayRes = await fetch('/relay/meeting');
-                    if (relayRes.ok) {
-                      const relayData = await relayRes.json();
-                      const meetings = relayData.meetings || [];
-                      const match = meetings.find(m =>
-                        m.meeting_id === myId || m.zoom_meeting_id === myId ||
-                        (m.meeting_id && myId && (m.meeting_id.includes(myId) || myId.includes(m.meeting_id)))
-                      );
-                      if (match) {
-                        activeRes = { active: true, meeting_id: match.meeting_id, company: match.company };
-                      }
-                    }
-                  } catch (_) {}
-                }
-
-                if (activeRes?.active) {
-                  autoJoin({
-                    id: (activeRes.company || 'meeting').toLowerCase().replace(/\s+/g, '_'),
-                    name: activeRes.company || 'Meeting',
-                    company: activeRes.company,
-                    meeting_id: activeRes.meeting_id || myId,
-                  });
-                }
-              }}
+              onClick={handleManualCheck}
               style={{ fontSize: 12 }}
             >
               🔄 Check Host Status Now
             </button>
           </div>
-        )}
-
-        {onClosePanel && (
-          <button className="btn btn--ghost btn--sm" onClick={onClosePanel} style={{ marginTop: 16 }}>
-            Close Panel
-          </button>
         )}
       </div>
     </div>

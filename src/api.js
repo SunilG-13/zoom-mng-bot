@@ -3,11 +3,10 @@
    Full mock API with knowledge base simulation
    ============================================ */
 
-import { getLastMeetingId, saveMeetingId, isGenericName } from './utils/meetingStorage';
-
 // ---- Configuration ----
 const CONFIG = {
   API_BASE_URL: '/api',
+  API_URL: '/api',
   USE_MOCK_API: false,     // Using real backend API
   MOCK_LOADING_DELAY: 3000,
   MOCK_RESPONSE_DELAY: 1500,
@@ -60,7 +59,7 @@ function normalizeStatus(s) {
 
 // ---- Real API calls ----
 async function _fetch(method, endpoint, body = null) {
-  const url = CONFIG.API_BASE_URL + endpoint;
+  const url = (CONFIG.API_URL || CONFIG.API_BASE_URL) + endpoint;
   const opts = {
     method,
     headers: { 'Content-Type': 'application/json' },
@@ -80,9 +79,6 @@ async function _fetch(method, endpoint, body = null) {
   return res.json();
 }
 
-// ---- Public API (auto-routes mock vs real) ----
-// Endpoints match MNG.postman_collection exactly
-
 function sanitizeCompany(name) {
   if (!name || typeof name !== 'string') return 'Company';
   const trimmed = name.trim();
@@ -101,11 +97,8 @@ export async function startMeeting(meetingId, company, hostName = 'Host') {
     company = obj.company;
     hostName = obj.host_name || 'Host';
   }
-  if (isGenericName(hostName)) {
-    try {
-      const saved = localStorage.getItem('mng_host_user_name');
-      if (!isGenericName(saved)) hostName = saved.trim();
-    } catch {}
+  if (!meetingId) {
+    throw new Error("Meeting ID is missing.");
   }
 
   const cleanCompany = sanitizeCompany(company);
@@ -115,16 +108,13 @@ export async function startMeeting(meetingId, company, hostName = 'Host') {
 
   try {
     const res = await _fetch('POST', '/start_meeting', payload);
-    const result = {
+    return {
       success: true,
       message: res.message || 'Meeting started',
       meeting_id: res.meeting_id || meetingId,
       company: cleanCompany,
       pdfs_loaded: res.documents_loaded || res.pdfs_loaded || 0,
     };
-    // Register with Vite relay so participants can discover this meeting
-    _registerMeetingRelay(result.meeting_id, cleanCompany, hostName);
-    return result;
   } catch (err) {
     const msg = (err.message || '').toLowerCase();
 
@@ -135,88 +125,40 @@ export async function startMeeting(meetingId, company, hostName = 'Host') {
       } catch (_) {}
       // Now start fresh
       const res2 = await _fetch('POST', '/start_meeting', payload);
-      const result2 = {
+      return {
         success: true,
         message: res2.message || 'Meeting started',
         meeting_id: res2.meeting_id || meetingId,
         company: cleanCompany,
         pdfs_loaded: res2.documents_loaded || res2.pdfs_loaded || 0,
       };
-      _registerMeetingRelay(result2.meeting_id, cleanCompany, hostName);
-      return result2;
     }
 
-    // If backend rejects unknown company folder (e.g. "invalid company")
-    if (msg.includes('invalid company') || msg.includes('company')) {
-      console.warn(`⚠️ Backend does not have exact SharePoint folder for "${cleanCompany}". Retrying with backend fallback while preserving UI company name...`);
-      try {
-        // Fallback payload using a supported backend folder key
-        const fallbackPayload = { ...payload, company: 'Biocon' };
-        const res3 = await _fetch('POST', '/start_meeting', fallbackPayload);
-        const result3 = {
-          success: true,
-          message: `${cleanCompany} meeting started`,
-          meeting_id: res3.meeting_id || meetingId,
-          company: cleanCompany,
-          pdfs_loaded: res3.documents_loaded || res3.pdfs_loaded || 0,
-        };
-        _registerMeetingRelay(result3.meeting_id, cleanCompany, hostName);
-        return result3;
-      } catch (_) {}
-    }
-
+    // Let backend errors propagate naturally
     throw err;
   }
 }
 
-// POST /ask  →  { question, session_id, meeting_id, participant_id, user_name, username, user_role }
+// POST /ask  →  { question, session_id, meeting_id, user_name, user_role }
 export async function askQuestion(meetingId, sessionId, userName, question, userRole = 'USER', participantId = null, companyName = 'Company') {
-  let resolvedName = userName;
-  if (isGenericName(resolvedName)) {
-    try {
-      const saved = localStorage.getItem('mng_participant_user_name');
-      if (saved && saved.trim()) resolvedName = saved.trim();
-    } catch {}
+  if (!meetingId) {
+    throw new Error("Meeting ID is missing.");
   }
-  const finalUserName = (resolvedName && resolvedName.trim()) ? resolvedName.trim() : 'Participant';
+  if (!sessionId) {
+    throw new Error("Session ID missing.");
+  }
+
+  const finalUserName = (userName && userName.trim()) ? userName.trim() : 'Participant';
 
   if (CONFIG.USE_MOCK_API) return MockApi.askQuestion(meetingId, sessionId, finalUserName, question, userRole, participantId);
-  const pId = participantId || sessionId;
-  let targetMeetingId = meetingId || getLastMeetingId() || `mng_${Date.now()}`;
 
-  const sendAsk = (mId) => _fetch('POST', '/ask', {
-    meeting_id: mId,
+  const res = await _fetch('POST', '/ask', {
+    meeting_id: meetingId,
     session_id: sessionId,
-    participant_id: pId,
     user_name: finalUserName,
-    username: finalUserName,
     user_role: userRole || 'USER',
     question,
   });
-
-  let res;
-  try {
-    res = await sendAsk(targetMeetingId);
-  } catch (err) {
-    const msg = (err.message || '').toLowerCase();
-    if (msg.includes('invalid meeting') || msg.includes('start meeting') || msg.includes('not found')) {
-      console.warn('⚠️ Meeting ID not registered on backend. Auto-starting meeting and retrying ask...');
-      try {
-        const cleanCo = sanitizeCompany(companyName);
-        const startRes = await startMeeting(targetMeetingId, cleanCo, finalUserName);
-        if (startRes?.meeting_id) {
-          targetMeetingId = startRes.meeting_id;
-        }
-        saveMeetingId(targetMeetingId);
-        res = await sendAsk(targetMeetingId);
-      } catch (autoErr) {
-        console.error('Auto-start error:', autoErr);
-        throw err;
-      }
-    } else {
-      throw err;
-    }
-  }
 
   // Normalize backend response → app's expected format
   return {
@@ -231,16 +173,15 @@ export async function askQuestion(meetingId, sessionId, userName, question, user
 
 // GET /meeting/{meeting_id}/participant/{participant_id}  →  get participant's questions history
 export async function getParticipantQuestions(meetingId, participantId, sessionId) {
-  const targetId = meetingId || getLastMeetingId();
-  if (!targetId) return { questions: [] };
-  if (CONFIG.USE_MOCK_API) return MockApi.getParticipantQuestions(targetId, participantId, sessionId);
+  if (!meetingId) return { questions: [] };
+  if (CONFIG.USE_MOCK_API) return MockApi.getParticipantQuestions(meetingId, participantId, sessionId);
   const pid = participantId || sessionId;
   try {
     let data;
     try {
-      data = await _fetch('GET', `/meeting/${encodeURIComponent(targetId)}/participant/${encodeURIComponent(pid)}`);
+      data = await _fetch('GET', `/meeting/${encodeURIComponent(meetingId)}/participant/${encodeURIComponent(pid)}`);
     } catch (_) {
-      data = await _fetch('GET', `/meeting/${encodeURIComponent(targetId)}`);
+      data = await _fetch('GET', `/meeting/${encodeURIComponent(meetingId)}`);
     }
     const rawList = data?.questions || data?.data || [];
     const questions = rawList
@@ -268,11 +209,9 @@ export async function getParticipantQuestions(meetingId, participantId, sessionI
 
 // GET /meeting/{meeting_id}/pending  →  unresolved/partial questions
 export async function getPendingQuestions(meetingId) {
-  const targetId = meetingId || getLastMeetingId();
-  if (!targetId) return { questions: [] };
-  if (CONFIG.USE_MOCK_API) return MockApi.getPendingQuestions(targetId);
-  const data = await _fetch('GET', `/meeting/${encodeURIComponent(targetId)}/pending`);
-  // Backend returns { data: [...] } — normalize to { questions: [...] }
+  if (!meetingId) return { questions: [] };
+  if (CONFIG.USE_MOCK_API) return MockApi.getPendingQuestions(meetingId);
+  const data = await _fetch('GET', `/meeting/${encodeURIComponent(meetingId)}/pending`);
   const questions = (data?.questions || data?.data || [])
     .map(q => ({
       ...q,
@@ -283,12 +222,9 @@ export async function getPendingQuestions(meetingId) {
 
 // GET /meeting/{meeting_id}  →  all questions log
 export async function getAllQuestions(meetingId) {
-  const targetId = meetingId || getLastMeetingId();
-  if (!targetId) return { questions: [], total: 0 };
-  if (CONFIG.USE_MOCK_API) return MockApi.getAllQuestions(targetId);
-  const data = await _fetch('GET', `/meeting/${encodeURIComponent(targetId)}`);
-  // Backend returns { "data": [...], "total_questions": N }
-  // Normalize to { questions: [...] } so the dashboard always works
+  if (!meetingId) return { questions: [], total: 0 };
+  if (CONFIG.USE_MOCK_API) return MockApi.getAllQuestions(meetingId);
+  const data = await _fetch('GET', `/meeting/${encodeURIComponent(meetingId)}`);
   const rawList = data?.questions || data?.data || [];
   const questions = rawList
     .map(q => {
@@ -298,7 +234,6 @@ export async function getAllQuestions(meetingId) {
         : 'Participant';
       return {
         ...q,
-        // normalize field names (backend may use user_name or username)
         user_name:  resolvedName,
         username:   resolvedName,
         question:   q.question   || q.text        || '',
@@ -310,210 +245,54 @@ export async function getAllQuestions(meetingId) {
   return { questions, total: data?.total_questions ?? questions.length };
 }
 
-// Register meeting with the Vite dev server relay for participant discovery
-async function _registerMeetingRelay(meetingId, company, hostName, zoomMeetingId = null) {
-  try {
-    const payload = { meeting_id: meetingId, company, host_name: hostName };
-    // If a separate Zoom SDK meeting_id is available, register it as an alias
-    if (zoomMeetingId && zoomMeetingId !== meetingId) {
-      payload.zoom_meeting_id = zoomMeetingId;
-    }
-    await fetch('/relay/meeting', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    console.log(`📡 Relay: Meeting [${meetingId}]${zoomMeetingId ? ` (zoom: ${zoomMeetingId})` : ''} registered as ${company}`);
-  } catch (e) {
-    console.warn('📡 Relay: Registration failed (non-critical):', e.message);
-  }
-}
-
-// Clear a specific meeting from Vite relay
-async function _clearMeetingRelay(meetingId) {
-  try {
-    const url = meetingId
-      ? `/relay/meeting?meeting_id=${encodeURIComponent(meetingId)}`
-      : '/relay/meeting';
-    await fetch(url, { method: 'DELETE' });
-    console.log(`📡 Relay: Meeting [${meetingId || 'ALL'}] cleared`);
-  } catch (e) {
-    console.warn('📡 Relay: Clear failed (non-critical):', e.message);
-  }
-}
-
-/**
- * Discover active meeting — with STRICT multi-meeting isolation.
- *
- * CRITICAL RULE: When multiple meetings exist in the relay and the caller
- * has a meeting_id, ONLY return a meeting that matches that ID.
- * NEVER return a random first-active meeting — that causes data mixing.
- *
- * When the caller has no real meeting_id (fallback/browser ID), we can
- * return a single-meeting shortcut, but REFUSE if multiple exist.
- */
-export async function getActiveMeeting(params = {}) {
-  if (CONFIG.USE_MOCK_API) return { success: true, active: false, meeting_id: null, company: null };
-
-  const callerMeetingId = params.meeting_id || null;
-
-  // ── Strategy 1: Relay lookup by specific meeting_id (uses fuzzy matching for same meeting) ──
-  if (callerMeetingId) {
-    try {
-      const relayRes = await fetch(`/relay/meeting?meeting_id=${encodeURIComponent(callerMeetingId)}`);
-      if (relayRes.ok) {
-        const relayData = await relayRes.json();
-        console.log(`🔍 getActiveMeeting(relay, id=${callerMeetingId}):`, JSON.stringify(relayData));
-        if (relayData.active && relayData.meeting_id) {
-          return {
-            success: true,
-            active: true,
-            meeting_id: relayData.meeting_id,
-            company: relayData.company || null,
-            host_name: relayData.host_name || null,
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('📡 Relay specific lookup failed:', e.message);
-    }
-  }
-
-  // ── Strategy 2: Query ALL relay meetings ──
-  try {
-    const relayRes = await fetch('/relay/meeting');
-    if (relayRes.ok) {
-      const relayData = await relayRes.json();
-      const meetings = relayData.meetings || [];
-      console.log(`🔍 getActiveMeeting(relay, all): ${meetings.length} meeting(s)`);
-
-      if (meetings.length > 0) {
-        if (callerMeetingId) {
-          // If caller specified a meeting_id, ONLY match an entry for that ID
-          const match = meetings.find(m =>
-            m.meeting_id === callerMeetingId ||
-            m.zoom_meeting_id === callerMeetingId ||
-            (m.meeting_id && m.meeting_id.includes(callerMeetingId)) ||
-            (callerMeetingId && callerMeetingId.includes(m.meeting_id))
-          );
-          if (match) {
-            try {
-              const verify = await _fetch('GET', `/status/${encodeURIComponent(match.meeting_id)}`);
-              if (verify.status === true || verify.status === 'active' || verify.status === 'Active') {
-                return { success: true, active: true, meeting_id: match.meeting_id, company: match.company || verify.company, host_name: match.host_name || verify.host_name };
-              } else {
-                _clearMeetingRelay(match.meeting_id);
-              }
-            } catch (_) {
-              return { success: true, active: true, ...match };
-            }
-          }
-          // Caller passed a meeting_id but it DOES NOT match any active relay meeting!
-          // Strictly return NOT ACTIVE for this meeting. Never hijack another meeting!
-          console.log(`🔍 getActiveMeeting: Caller ID "${callerMeetingId}" does not match any active meeting.`);
-          return { success: true, active: false, meeting_id: callerMeetingId, company: null };
-        }
-
-        // STRICT ISOLATION: Only return a meeting if caller has NO meeting_id at all
-        // (browser testing mode). If caller has a meeting_id that didn't match,
-        // they belong to a different meeting — do NOT cross-contaminate.
-        // Caller has NO real ID (fallback) — safe to return if ONLY ONE meeting exists
-        if (!callerMeetingId && meetings.length === 1) {
-          const only = meetings[0];
-          try {
-            const verify = await _fetch('GET', `/status/${encodeURIComponent(only.meeting_id)}`);
-            if (verify.status === true || verify.status === 'active' || verify.status === 'Active') {
-              return { success: true, active: true, meeting_id: only.meeting_id, company: only.company || verify.company, host_name: only.host_name || verify.host_name };
-            } else {
-              _clearMeetingRelay(only.meeting_id);
-            }
-          } catch (e) {
-            return { success: true, active: true, ...only };
-          }
-        }
-
-        // MULTIPLE meetings exist + caller has no real ID → REFUSE to pick one
-        // This prevents mixing Biocon and Pfizer data
-        console.warn(`🔍 getActiveMeeting: ${meetings.length} meetings active but caller has no real meeting_id — cannot determine which meeting to join`);
-        if (callerMeetingId) {
-          console.log(`📡 getActiveMeeting: caller meeting_id [${callerMeetingId}] not found in ${meetings.length} relay meeting(s) — refusing to guess`);
-        }
-        return { success: true, active: false, meeting_id: null, company: null, multiple_meetings: true, meetings_count: meetings.length };
-      }
-    }
-  } catch (e) {
-    console.warn('📡 Relay all-meetings lookup failed:', e.message);
-  }
-
-  // ── Strategy 3: Backend endpoints as last fallback if caller provided an ID ──
-  if (callerMeetingId) {
-    try {
-      const data = await _fetch('GET', `/status/${encodeURIComponent(callerMeetingId)}`);
-      const isActive = !!(data && (data.active === true || data.status === true || data.status === 'active' || data.status === 'Active'));
-      if (isActive) {
-        return { success: true, active: true, meeting_id: data.meeting_id || callerMeetingId, company: data.company || null, host_name: data.host_name || null };
-      }
-    } catch (_) {}
-  }
-
-  return { success: true, active: false, meeting_id: callerMeetingId, company: null };
-}
-
-export async function checkAnyActiveMeeting() {
-  return getActiveMeeting();
-}
-
 /**
  * Check if a SPECIFIC meeting is active by its ID.
  * ONLY calls /status/{meeting_id} — NO discovery fallback.
  * Use this when you have a real Zoom meeting_id.
  */
 export async function checkMeetingStatusById(meetingId) {
-  if (!meetingId) return { success: true, active: false, meeting_id: null };
+  if (!meetingId) {
+    throw new Error("Meeting ID is missing.");
+  }
   if (CONFIG.USE_MOCK_API) return MockApi.checkMeetingStatus(meetingId);
 
-  try {
-    const data = await _fetch('GET', `/status/${encodeURIComponent(meetingId)}`);
-    console.log('📡 checkMeetingStatusById response:', JSON.stringify(data));
-    let isActive = false;
-    if (data.status === true) {
-      isActive = true;
-    } else if (typeof data.status === 'string') {
-      const lower = data.status.toLowerCase().trim();
-      isActive = lower === 'true' || lower === 'active';
-    }
-    return {
-      success: true,
-      active: isActive,
-      company: data.company || null,
-      meeting_id: data.meeting_id || meetingId,
-      host_name: data.host_name || null,
-    };
-  } catch (err) {
-    console.warn('📡 checkMeetingStatusById error:', err.message);
-    return { success: true, active: false, meeting_id: meetingId };
+  const response = await fetch(`${CONFIG.API_URL || CONFIG.API_BASE_URL}/status/${encodeURIComponent(meetingId)}`);
+  if (!response.ok) {
+    throw new Error("Meeting not found");
   }
-}
 
-// GET /status/{meeting_id}  →  check if meeting is active on backend
-export async function checkActiveMeeting(meetingId) {
-  const targetId = meetingId || getLastMeetingId();
-  return checkMeetingStatusById(targetId);
+  const data = await response.json();
+  let isActive = false;
+  if (data.status === true || data.active === true) {
+    isActive = true;
+  } else if (typeof data.status === 'string') {
+    const lower = data.status.toLowerCase().trim();
+    isActive = lower === 'true' || lower === 'active';
+  }
+
+  return {
+    ...data,
+    success: true,
+    active: isActive,
+    company: data.company || null,
+    meeting_id: data.meeting_id || meetingId,
+    host_name: data.host_name || null,
+  };
 }
 
 export async function checkMeetingStatus(meetingId) {
-  return checkActiveMeeting(meetingId);
+  return checkMeetingStatusById(meetingId);
 }
 
 // POST /end_meeting  →  { meeting_id }
 export async function endMeeting(meetingId) {
+  if (!meetingId) {
+    throw new Error("Meeting ID is missing.");
+  }
   if (CONFIG.USE_MOCK_API) return MockApi.endMeeting(meetingId);
-  // Clear this specific meeting from Vite relay (not other meetings!)
-  _clearMeetingRelay(meetingId);
   try {
     return await _fetch('POST', '/end_meeting', { meeting_id: meetingId });
   } catch (err) {
-    // Always return success so the app resets cleanly
     return { success: true, message: 'Meeting ended' };
   }
 }
@@ -522,7 +301,6 @@ export async function endMeeting(meetingId) {
 const MockApi = {
   _meetings: {},
 
-  // Knowledge base with diverse statuses
   _knowledgeBase: {
     dosage: {
       answer: 'The recommended dosage is 20mg administered orally twice daily, with or without food. For pediatric patients (ages 6-17), the dosage should be adjusted to 10mg once daily. Treatment duration is typically 12 weeks, with assessment for continuation at the end of the treatment period.',
@@ -614,12 +392,17 @@ const MockApi = {
 
   async startMeeting(meetingId, company) {
     await sleep(CONFIG.MOCK_LOADING_DELAY);
-    this._meetings[meetingId] = {
-      id: meetingId,
-      company,
-      logs: [],
-      startedAt: new Date(),
-    };
+    const meetings = Object.values(this._meetings);
+    let meeting = meetings.find(m => m.meeting_id === meetingId);
+    if (!meeting) {
+      meeting = {
+        meeting_id: meetingId,
+        company,
+        logs: [],
+        startedAt: new Date(),
+      };
+      this._meetings[meetingId] = meeting;
+    }
     return {
       success: true,
       message: `${company} knowledge base has been loaded successfully. Participants can now ask questions.`,
@@ -634,7 +417,7 @@ const MockApi = {
     await sleep(CONFIG.MOCK_RESPONSE_DELAY);
     let meeting = this._meetings[meetingId];
     if (!meeting) {
-      meeting = { id: meetingId, company: 'General', logs: [], startedAt: new Date() };
+      meeting = { meeting_id: meetingId, company: 'General', logs: [], startedAt: new Date() };
       this._meetings[meetingId] = meeting;
     }
 
@@ -699,9 +482,9 @@ const MockApi = {
     await sleep(200);
     const meeting = this._meetings[meetingId];
     if (meeting) {
-      return { success: true, active: true, company: meeting.company };
+      return { success: true, active: true, company: meeting.company, meeting_id: meetingId };
     }
-    return { success: true, active: false };
+    return { success: true, active: false, meeting_id: meetingId };
   },
 
   async endMeeting(meetingId) {

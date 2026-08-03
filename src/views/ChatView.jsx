@@ -1,19 +1,13 @@
 /* ============================================
    MNG Bot — Chat View
-   Q&A interface for all participants
+   Q&A interface for all participants and hosts.
+   
+   Uses context.meeting_id (user-entered) for ALL API calls.
    ============================================ */
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Icons } from '../components/Icons';
-import { CONFIG, askQuestion, getAllQuestions, getParticipantQuestions } from '../api';
+import { askQuestion, getAllQuestions, getParticipantQuestions } from '../api';
 import { useToast } from '../components/Toast';
-import { isGenericName } from '../utils/meetingStorage';
-
-function escapeHtml(str) {
-  if (!str) return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 function formatTime(date) {
   if (!(date instanceof Date)) date = new Date(date);
@@ -46,17 +40,7 @@ function normalizeStatus(s) {
   return null;
 }
 
-function resolveSenderName(context) {
-  if (context?.user_name && !isGenericName(context.user_name)) return context.user_name.trim();
-  if (context?.participantName && !isGenericName(context.participantName)) return context.participantName.trim();
-  try {
-    const saved = localStorage.getItem('mng_user_name');
-    if (saved && !isGenericName(saved)) return saved.trim();
-  } catch {}
-  return (context?.user_name && context.user_name.trim()) ? context.user_name.trim() : 'Zoom User';
-}
-
-export default function ChatView({ context, meetingInfo, onNavigate, onEndMeeting, onChangeCompany, pendingCount, onClosePanel }) {
+export default function ChatView({ context, meetingInfo, onNavigate, onEndMeeting, onChangeCompany, pendingCount }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -64,16 +48,20 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
   const messagesRef = useRef(null);
   const toast = useToast();
 
-  const isHost = context?.is_host;
+  const isHost = context?.is_host || context?.isHost;
+  const meetingId = context?.meeting_id;
+  const userName = context?.user_name || 'User';
+  const userRole = context?.user_role || (isHost ? 'host' : 'participant');
+  const sessionId = context?.session_id;
 
   // Restore participant's own chat history when joining/rejoining
   useEffect(() => {
-    if (!context?.meeting_id) return;
+    if (!meetingId) return;
+
     let isSubscribed = true;
     const fetchHistory = async () => {
       try {
-        const pid = context.participant_id || context.session_id;
-        const res = await getParticipantQuestions(context.meeting_id, pid, context.session_id);
+        const res = await getParticipantQuestions(meetingId, sessionId, sessionId);
         if (isSubscribed && res?.questions && res.questions.length > 0) {
           const loadedMsgs = [];
           res.questions.forEach(q => {
@@ -81,8 +69,8 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
               loadedMsgs.push({
                 id: 'hist_q_' + (q.id || crypto.randomUUID()),
                 type: 'user',
-                sender: (!isGenericName(q.user_name || q.username)) ? (q.user_name || q.username).trim() : resolveSenderName(context),
-                role: q.user_role || (isHost ? 'host' : 'participant'),
+                sender: q.user_name || q.username || userName,
+                role: q.user_role || userRole,
                 text: q.question,
                 timestamp: q.timestamp ? new Date(q.timestamp) : new Date(),
               });
@@ -108,9 +96,10 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
         }
       } catch (_) {}
     };
+
     fetchHistory();
     return () => { isSubscribed = false; };
-  }, [context?.meeting_id, context?.participant_id, context?.session_id]);
+  }, [meetingId, sessionId]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -121,37 +110,42 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
     }
   }, [messages, isTyping]);
 
-  const handleSend = async () => {
-    const question = input.trim();
+  const handleSend = async (overrideText = null) => {
+    const question = (typeof overrideText === 'string' ? overrideText : input).trim();
     if (!question || isTyping) return;
+
+    if (!meetingId) {
+      toast.error('Meeting ID is missing.');
+      return;
+    }
+
+    if (!sessionId) {
+      toast.error('Session expired.');
+      return;
+    }
 
     setInput('');
     setShowWelcome(false);
 
-    // Add user message
-    const senderName = resolveSenderName(context);
     const userMsg = {
       id: crypto.randomUUID(),
       type: 'user',
-      sender: senderName,
-      participantName: senderName,
-      role: context?.user_role || (isHost ? 'host' : 'participant'),
+      sender: userName,
+      role: userRole,
       text: question,
       timestamp: new Date(),
     };
     setMessages(prev => [...prev, userMsg]);
-
-    // Show typing indicator
     setIsTyping(true);
 
     try {
       const result = await askQuestion(
-        context.meeting_id,
-        context.session_id,
-        senderName,
+        meetingId,
+        sessionId,
+        userName,
         question,
-        context?.user_role || (isHost ? 'host' : 'participant'),
-        context?.participant_id,
+        userRole,
+        null,
         meetingInfo?.companyName || 'Company'
       );
 
@@ -170,15 +164,13 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
       };
       setMessages(prev => [...prev, botMsg]);
 
-      // Refresh dashboard data in background for host
+      // Refresh dashboard data in background (host only)
       if (isHost) {
         try {
-          const data = await getAllQuestions(context.meeting_id);
-          if (data?.questions && onNavigate) {
-            // Trigger a refresh via parent with meeting_id check
-            window.__mngLastQuestionLogs = data.questions;
+          const data = await getAllQuestions(meetingId);
+          if (data?.questions) {
             window.dispatchEvent(new CustomEvent('mng-logs-updated', {
-              detail: { meeting_id: context?.meeting_id, questions: data.questions }
+              detail: { meeting_id: meetingId, questions: data.questions }
             }));
           }
         } catch (_) {}
@@ -188,67 +180,6 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
       setIsTyping(false);
       toast.error('Failed to get answer: ' + err.message);
     }
-  };
-
-  const handleSuggestionClick = (suggestion) => {
-    setInput(suggestion);
-    // Use a tiny delay so state updates, then auto-send
-    setTimeout(() => {
-      setInput('');
-      setShowWelcome(false);
-
-      const senderName = resolveSenderName(context);
-      const userMsg = {
-        id: crypto.randomUUID(),
-        type: 'user',
-        sender: senderName,
-        participantName: senderName,
-        role: context?.user_role || (isHost ? 'host' : 'participant'),
-        text: suggestion,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, userMsg]);
-      setIsTyping(true);
-
-      askQuestion(
-        context.meeting_id,
-        context.session_id,
-        senderName,
-        suggestion,
-        context?.user_role || (isHost ? 'host' : 'participant'),
-        context?.participant_id,
-        meetingInfo?.companyName || 'Company'
-      )
-        .then(result => {
-          setIsTyping(false);
-          const botMsg = {
-            id: crypto.randomUUID(),
-            type: 'bot',
-            sender: 'MNG Bot',
-            text: result.answer,
-            status: result.status,
-            confidence: result.confidence_score,
-            source: result.source_document,
-            page: result.source_page,
-            timestamp: new Date(),
-          };
-          setMessages(prev => [...prev, botMsg]);
-
-          if (isHost) {
-            getAllQuestions(context.meeting_id).then(data => {
-              if (data?.questions) {
-                window.dispatchEvent(new CustomEvent('mng-logs-updated', {
-                  detail: { meeting_id: context?.meeting_id, questions: data.questions }
-                }));
-              }
-            }).catch(() => {});
-          }
-        })
-        .catch(err => {
-          setIsTyping(false);
-          toast.error('Failed to get answer: ' + err.message);
-        });
-    }, 0);
   };
 
   const handleCopy = async (text) => {
@@ -279,6 +210,9 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
               <span style={{ fontSize: 11, color: 'var(--color-accent-blue)', fontWeight: 600 }}>
                 🏢 {meetingInfo?.companyName || 'Company'}
               </span>
+              <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
+                • {meetingId}
+              </span>
               {isHost && onChangeCompany && (
                 <button
                   className="btn btn--ghost btn--xs"
@@ -293,6 +227,9 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
           </div>
         </div>
         <div className="app-header__right">
+          <span style={{ fontSize: 11, color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4, marginRight: 8 }}>
+            {Icons.user} {userName}
+          </span>
           <div className="app-header__meeting-badge">
             <span className="dot" />
             <span>Live</span>
@@ -301,11 +238,6 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
             <button className="btn btn--danger btn--sm" onClick={onEndMeeting} title="End Meeting">
               {Icons.power}
               <span>End</span>
-            </button>
-          )}
-          {onClosePanel && (
-            <button className="btn btn--ghost" onClick={onClosePanel} style={{ padding: 4, marginLeft: 4 }} title="Close Panel">
-              {Icons.x}
             </button>
           )}
         </div>
@@ -356,7 +288,7 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
             </div>
             <div className="message__content">
               <div className="message__header">
-                <span className="message__name">{msg.sender || msg.participantName || (msg.type === 'user' ? 'User' : 'MNG Bot')}</span>
+                <span className="message__name">{msg.sender || (msg.type === 'user' ? 'User' : 'MNG Bot')}</span>
                 <span className="message__time">{formatTime(msg.timestamp)}</span>
               </div>
               <div className="message__bubble">
@@ -364,7 +296,7 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
               </div>
               {msg.type === 'bot' && (
                 <>
-                  {/* Status badge — shows how well the question was answered */}
+                  {/* Status badge */}
                   {(() => {
                     const ns = normalizeStatus(msg.status);
                     if (!ns) return null;
@@ -431,7 +363,7 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
         <button
           className="chat-input-bar__send"
           disabled={!input.trim() || isTyping}
-          onClick={handleSend}
+          onClick={() => handleSend()}
           title="Send"
         >
           {Icons.send}

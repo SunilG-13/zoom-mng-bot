@@ -38,15 +38,23 @@ export default function SplashView({ onComplete }) {
       if (!cancelled) setStatusText('Connecting to Zoom...');
       await sleep(400);
 
-      const { initZoom, getMeetingContext } = await import('../zoom');
-      await initZoom();
-      const context = await getMeetingContext();
-      console.log("Host/Participant Meeting ID:", context.meetingUUID);
-      console.log("Numeric Meeting:", context.meetingNumber);
+      let context;
+      try {
+        const { initZoom, getMeetingContext } = await import('../zoom');
+        await initZoom();
+        context = await getMeetingContext();
+      } catch (err) {
+        console.warn('⚠️ SplashView Zoom init exception:', err);
+        const { getMeetingContext } = await import('../zoom');
+        context = await getMeetingContext();
+      }
+
+      console.log("Host/Participant Meeting ID:", context?.meetingUUID);
+      console.log("Numeric Meeting:", context?.meetingNumber);
       console.log(context);
       console.log('🔍 Splash — Zoom context:', JSON.stringify(context));
 
-      if (!cancelled) setStatusText(`Welcome, ${context.user_name}`);
+      if (!cancelled) setStatusText(`Welcome, ${context?.user_name || 'User'}`);
 
       // Step 2: New meeting detection — clear stale data from previous meetings
       const { isNew, previousUUID } = detectNewMeeting(context.meetingUUID);
@@ -83,20 +91,7 @@ export default function SplashView({ onComplete }) {
         }
       }
 
-      if (!activeMeeting && meetingId) {
-        console.log('🔍 Splash — Checking getActiveMeeting for meeting_id:', meetingId);
-        try {
-          const discovery = await getActiveMeeting({ meeting_id: meetingId });
-          console.log(`🔍 Splash — getActiveMeeting response:`, JSON.stringify(discovery));
-          if (discovery.active && discovery.meeting_id) {
-            activeMeeting = discovery;
-            context.meeting_id = discovery.meeting_id;
-            context.meetingUUID = discovery.meeting_id;
-          }
-        } catch (err) {
-          console.warn('🔍 Splash — getActiveMeeting error:', err);
-        }
-      }
+
 
       // Minimum splash duration for smooth UX
       const elapsed = Date.now() - startTime;
@@ -174,16 +169,7 @@ export default function SplashView({ onComplete }) {
         } catch (_) {}
       }
 
-      if (!activeMeeting) {
-        try {
-          const discovery = await getActiveMeeting({ meeting_id: meetingId });
-          if (discovery.active && discovery.meeting_id) {
-            context.meeting_id = discovery.meeting_id;
-            context.meetingUUID = discovery.meeting_id;
-            activeMeeting = discovery;
-          }
-        } catch (_) {}
-      }
+
     }
 
     routeUser(selectedRoleIsHost, activeMeeting, context);

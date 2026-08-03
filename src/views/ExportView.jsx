@@ -47,7 +47,7 @@ export default function ExportModal({ logs, meetingId, companyName, onClose }) {
         return selectedColumns.map(col => {
           switch (col.key) {
             case 'timestamp':        return q.timestamp ? formatTimestamp(q.timestamp) : '';
-            case 'username':         return q.username || '';
+            case 'username':         return q.user_name || q.username || '';
             case 'question':         return q.question || '';
             case 'answer':           return q.answer || '';
             case 'status':           return q.status || '';
@@ -135,7 +135,7 @@ export default function ExportModal({ logs, meetingId, companyName, onClose }) {
         return selectedColumns.map(col => {
           switch (col.key) {
             case 'timestamp':        return q.timestamp ? formatTimestamp(q.timestamp) : '';
-            case 'username':         return q.username || '';
+            case 'username':         return q.user_name || q.username || '';
             case 'question':         return q.question || '';
             case 'answer':           return q.answer || '';
             case 'status':           return q.status || '';

@@ -1,7 +1,3 @@
-/* ============================================
-   MNG Bot — Export View
-   Excel export modal with 2-column grid selection & fixed action bar
-   ============================================ */
 import { useState, useEffect, useCallback } from 'react';
 import { Icons } from '../components/Icons';
 import { CONFIG } from '../api';

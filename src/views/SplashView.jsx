@@ -1,16 +1,3 @@
-/* ============================================
-   MNG Bot — Splash View
-   
-   FLOW:
-   1. Init Zoom SDK → get meeting_id + user context
-   2. Check /status/{meeting_id} to see if THIS meeting is active
-   3. Determine role:
-      - SDK says host → host flow
-      - SDK says participant → participant flow
-      - SDK unknown + meeting active → auto-participant (host already started)
-      - SDK unknown + meeting NOT active → ask user (Host or Participant?)
-   4. Route accordingly
-   ============================================ */
 import { useEffect, useState } from 'react';
 import { Icons } from '../components/Icons';
 import { 
@@ -99,14 +86,7 @@ export default function SplashView({ onComplete }) {
 
       if (cancelled || !onComplete) return;
 
-      // ---------------------------------------------------------
-      // ROLE DETECTION & ROUTING RULES:
-      //
-      // 1. Zoom SDK explicit role (when OAuth scopes are present)
-      // 2. Tab session flags (host already started / participant joined)
-      // 3. Active status of THIS meeting
-      // 4. Fallback: Prompt user to pick Host vs Participant
-      // ---------------------------------------------------------
+      // Role detection & routing rules
       let isHost;
       const hasHostStartedSession = sessionStorage.getItem('mng_host_started') === 'true';
       const hasParticipantJoinedSession = sessionStorage.getItem('mng_participant_joined') === 'true';

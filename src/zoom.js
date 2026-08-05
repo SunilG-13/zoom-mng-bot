@@ -1,6 +1,4 @@
-/* ============================================
-   MNG Bot — Zoom Apps SDK Integration
-   ============================================ */
+// MNG Bot — Zoom Apps SDK Integration
 import zoomSdk from '@zoom/appssdk';
 import { isGenericName } from './utils/meetingStorage';
 
@@ -37,7 +35,7 @@ export async function initZoom() {
     _initError = null;
 
     const authStatus = _configResult?.auth?.status;
-    console.log('✅ Zoom SDK initialized. Config:', JSON.stringify(_configResult));
+    console.log('Zoom SDK initialized. Config:', JSON.stringify(_configResult));
 
     if (authStatus === 'unauthenticated' || authStatus === 'unauthorized') {
       _isGuestMode = true;
@@ -45,7 +43,7 @@ export async function initZoom() {
 
     return _configResult;
   } catch (error) {
-    console.warn('⚠️ Zoom SDK initialization warning:', error.message);
+    console.warn('Zoom SDK initialization warning:', error.message);
     _sdkReady = false;
     _initError = error.message;
     return null;
@@ -58,10 +56,6 @@ export function getInitError() { return _initError; }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-/**
- * Determine if the role indicates host, participant, or unknown (null).
- * Returns: true (host), false (participant), null (unknown)
- */
 function _evaluateRole(role) {
   if (role === undefined || role === null || role === '') return null;
 
@@ -81,72 +75,60 @@ function _evaluateRole(role) {
   return null;
 }
 
-/**
- * Try getUserContext with retry logic.
- */
 async function _getUserContextWithRetry(maxAttempts = 2) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const user = await zoomSdk.getUserContext();
-      console.log(`👤 getUserContext (attempt ${attempt}):`, JSON.stringify(user));
+      console.log(`getUserContext (attempt ${attempt}):`, JSON.stringify(user));
       if (user && Object.keys(user).length > 0) return user;
       if (attempt < maxAttempts) await sleep(500);
     } catch (e) {
-      console.warn(`⚠️ getUserContext attempt ${attempt} failed:`, e.message);
+      console.warn(`getUserContext attempt ${attempt} failed:`, e.message);
       if (attempt < maxAttempts) await sleep(500);
     }
   }
   return {};
 }
 
-/**
- * Try getUser API with retry logic.
- */
 async function _getUserWithRetry(maxAttempts = 2) {
   if (!_sdkReady || typeof zoomSdk.getUser !== 'function') return {};
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const user = await zoomSdk.getUser();
-      console.log(`👤 getUser direct (attempt ${attempt}):`, JSON.stringify(user));
+      console.log(`getUser direct (attempt ${attempt}):`, JSON.stringify(user));
       if (user && Object.keys(user).length > 0) return user;
       if (attempt < maxAttempts) await sleep(500);
     } catch (e) {
-      console.warn(`⚠️ getUser attempt ${attempt} failed:`, e.message);
+      console.warn(`getUser attempt ${attempt} failed:`, e.message);
       if (attempt < maxAttempts) await sleep(500);
     }
   }
   return {};
 }
 
-/**
- * Try getMeetingParticipants with retry logic.
- */
 async function _getMeetingParticipantsWithRetry(maxAttempts = 2) {
   if (!_sdkReady || typeof zoomSdk.getMeetingParticipants !== 'function') return [];
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const res = await zoomSdk.getMeetingParticipants();
-      console.log(`👥 getMeetingParticipants (attempt ${attempt}):`, JSON.stringify(res));
+      console.log(`getMeetingParticipants (attempt ${attempt}):`, JSON.stringify(res));
       const list = res?.participants || res?.data || (Array.isArray(res) ? res : []);
       if (list.length > 0) return list;
       if (attempt < maxAttempts) await sleep(500);
     } catch (e) {
-      console.warn(`⚠️ getMeetingParticipants attempt ${attempt} failed:`, e.message);
+      console.warn(`getMeetingParticipants attempt ${attempt} failed:`, e.message);
       if (attempt < maxAttempts) await sleep(500);
     }
   }
   return [];
 }
 
-/**
- * Try getMeetingContext / getMeetingUUID with retry logic.
- */
 async function _getMeetingContextWithRetry(maxAttempts = 3) {
   let meetingContext = {};
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       meetingContext = await zoomSdk.getMeetingContext();
-      console.log(`📋 getMeetingContext (attempt ${attempt}):`, JSON.stringify(meetingContext));
+      console.log(`getMeetingContext (attempt ${attempt}):`, JSON.stringify(meetingContext));
       const uuid = meetingContext?.meetingUUID || meetingContext?.meetingID || meetingContext?.meetingId;
       if (uuid) return meetingContext;
 
@@ -154,29 +136,26 @@ async function _getMeetingContextWithRetry(maxAttempts = 3) {
         try {
           const directUUID = await zoomSdk.getMeetingUUID();
           if (directUUID) {
-            console.log(`📋 getMeetingUUID direct call (attempt ${attempt}):`, directUUID);
+            console.log(`getMeetingUUID direct call (attempt ${attempt}):`, directUUID);
             const resUUID = typeof directUUID === 'string' ? directUUID : (directUUID?.meetingUUID || directUUID?.meetingId);
             if (resUUID) {
               return { ...meetingContext, meetingUUID: resUUID };
             }
           }
         } catch (e) {
-          console.warn(`⚠️ getMeetingUUID direct attempt ${attempt} failed:`, e.message);
+          console.warn(`getMeetingUUID direct attempt ${attempt} failed:`, e.message);
         }
       }
 
       if (attempt < maxAttempts) await sleep(500);
     } catch (e) {
-      console.warn(`⚠️ getMeetingContext attempt ${attempt} failed:`, e.message);
+      console.warn(`getMeetingContext attempt ${attempt} failed:`, e.message);
       if (attempt < maxAttempts) await sleep(500);
     }
   }
   return meetingContext || {};
 }
 
-/**
- * Recursively search any object/array for screen name properties.
- */
 function findScreenNameInObject(obj, depth = 0) {
   if (!obj || typeof obj !== 'object' || depth > 4) return null;
 
@@ -225,9 +204,6 @@ function findScreenNameInObject(obj, depth = 0) {
   return null;
 }
 
-/**
- * Extract display name from all potential Zoom SDK objects, URL params, and local storage.
- */
 function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParticipant = {}, configResult = {}, userObj = {}, participantsList = []) {
   const params = new URLSearchParams(window.location.search);
   const urlName = params.get('username') || params.get('user_name') || params.get('name') || params.get('screenName') || params.get('displayName') || params.get('participantName');
@@ -265,9 +241,6 @@ function _resolveDisplayName(userContext = {}, meetingContext = {}, matchedParti
   return _isGuestMode ? 'Guest User' : 'Zoom User';
 }
 
-/**
- * Get full meeting + user context from Zoom SDK.
- */
 export async function getMeetingContext() {
   if (!_sdkReady) return _getFallbackContext();
 
@@ -342,17 +315,17 @@ export async function getMeetingContext() {
 
     const meetingUUID = zoomMeetingId || (meetingNumber ? String(meetingNumber) : null);
     if (!meetingUUID) {
-      console.warn("⚠️ Zoom meeting UUID not available from SDK context — using fallback context");
+      console.warn('Zoom meeting UUID not available from SDK context — using fallback context');
       return _getFallbackContext();
     }
 
     const pUUID = userContext.participantUUID || userContext.participantId || userObj.participantUUID || matchedParticipant?.participantUUID;
     const participantUUID = pUUID || 'participant_' + crypto.randomUUID();
 
-    let session_id = sessionStorage.getItem("mng_session_id");
+    let session_id = sessionStorage.getItem('mng_session_id');
     if (!session_id) {
       session_id = crypto.randomUUID();
-      sessionStorage.setItem("mng_session_id", session_id);
+      sessionStorage.setItem('mng_session_id', session_id);
     }
 
     return {
@@ -375,7 +348,7 @@ export async function getMeetingContext() {
       },
     };
   } catch (err) {
-    console.warn('⚠️ getMeetingContext failed:', err.message);
+    console.warn('getMeetingContext failed:', err.message);
     return _getFallbackContext();
   }
 }
@@ -401,10 +374,10 @@ function _getFallbackContext() {
     resolvedName = explicitRole === true ? 'Test Host' : 'Test User';
   }
 
-  let session_id = sessionStorage.getItem("mng_session_id");
+  let session_id = sessionStorage.getItem('mng_session_id');
   if (!session_id) {
     session_id = crypto.randomUUID();
-    sessionStorage.setItem("mng_session_id", session_id);
+    sessionStorage.setItem('mng_session_id', session_id);
   }
 
   return {

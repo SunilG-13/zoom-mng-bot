@@ -1,24 +1,13 @@
-/* ============================================
-   MNG Bot — API Client + Mock Backend
-   Full mock API with knowledge base simulation
-   ============================================ */
-
-// ---- Configuration ----
 const CONFIG = {
   API_BASE_URL: '/api',
   API_URL: '/api',
-  USE_MOCK_API: false,     // Using real backend API
+  USE_MOCK_API: false,
   MOCK_LOADING_DELAY: 3000,
   MOCK_RESPONSE_DELAY: 1500,
   COMPANIES: [
     { id: 'pfizer',      name: 'Pfizer',      icon: 'P', pdfs: 5 },
     { id: 'biocon',      name: 'Biocon',       icon: 'B', pdfs: 3 },
   ],
-  // SUGGESTIONS: [
-  //   'What is the recommended dosage?',
-  //   'What are the contraindications?',
-  //   'What are the side effects?',
-  // ],
   EXPORT_COLUMNS_DEFAULT: [
     { key: 'timestamp',  label: 'Timestamp',  checked: true },
     { key: 'username',   label: 'Username',   checked: true },
@@ -39,11 +28,9 @@ const CONFIG = {
 
 export { CONFIG };
 
-// ---- Helpers ----
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const uid = () => crypto.randomUUID();
 
-// Normalize status string to title case (e.g. "resolved" → "Resolved")
 function normalizeStatus(s) {
   if (!s) return 'Unresolved';
   const lower = String(s).toLowerCase().trim();
@@ -53,7 +40,6 @@ function normalizeStatus(s) {
   return 'Unresolved';
 }
 
-// ---- Real API calls ----
 async function _fetch(method, endpoint, body = null) {
   const url = (CONFIG.API_URL || CONFIG.API_BASE_URL) + endpoint;
   const opts = {
@@ -85,7 +71,6 @@ function sanitizeCompany(name) {
   return trimmed.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
-// POST /start_meeting  →  { meeting_id, company, host_name }
 export async function startMeeting(meetingId, company, hostName = 'Host') {
   if (typeof meetingId === 'object' && meetingId !== null) {
     const obj = meetingId;
@@ -113,13 +98,10 @@ export async function startMeeting(meetingId, company, hostName = 'Host') {
     };
   } catch (err) {
     const msg = (err.message || '').toLowerCase();
-
-    // If meeting already exists → end it first, then start fresh
     if (msg.includes('already exists') || msg.includes('already started')) {
       try {
         await _fetch('POST', '/end_meeting', { meeting_id: meetingId });
       } catch (_) {}
-      // Now start fresh
       const res2 = await _fetch('POST', '/start_meeting', payload);
       return {
         success: true,
@@ -129,13 +111,10 @@ export async function startMeeting(meetingId, company, hostName = 'Host') {
         pdfs_loaded: res2.documents_loaded || res2.pdfs_loaded || 0,
       };
     }
-
-    // Let backend errors propagate naturally
     throw err;
   }
 }
 
-// POST /ask  →  { question, session_id, meeting_id, user_name, user_role }
 export async function askQuestion(meetingId, sessionId, userName, question, userRole = 'USER', participantId = null, companyName = 'Company') {
   if (!meetingId) {
     throw new Error("Meeting ID is missing.");
@@ -156,7 +135,6 @@ export async function askQuestion(meetingId, sessionId, userName, question, user
     question,
   });
 
-  // Normalize backend response → app's expected format
   return {
     success: true,
     answer: res.text || res.answer || 'No answer available.',
@@ -167,7 +145,6 @@ export async function askQuestion(meetingId, sessionId, userName, question, user
   };
 }
 
-// GET /meeting/{meeting_id}/participant/{participant_id}  →  get participant's questions history
 export async function getParticipantQuestions(meetingId, participantId, sessionId) {
   if (!meetingId) return { questions: [] };
   if (CONFIG.USE_MOCK_API) return MockApi.getParticipantQuestions(meetingId, participantId, sessionId);
@@ -184,9 +161,7 @@ export async function getParticipantQuestions(meetingId, participantId, sessionI
       .filter(q => !pid || q.participant_id === pid || q.session_id === pid || q.user_name === pid || q.username === pid)
       .map(q => {
         const rawName = q.user_name || q.username || q.userName;
-        const resolvedName = (rawName && rawName.trim())
-          ? rawName.trim()
-          : 'Participant';
+        const resolvedName = (rawName && rawName.trim()) ? rawName.trim() : 'Participant';
         return {
           ...q,
           user_name: resolvedName,
@@ -203,7 +178,6 @@ export async function getParticipantQuestions(meetingId, participantId, sessionI
   }
 }
 
-// GET /meeting/{meeting_id}/pending  →  unresolved/partial questions
 export async function getPendingQuestions(meetingId) {
   if (!meetingId) return { questions: [] };
   if (CONFIG.USE_MOCK_API) return MockApi.getPendingQuestions(meetingId);
@@ -216,7 +190,6 @@ export async function getPendingQuestions(meetingId) {
   return { questions };
 }
 
-// GET /meeting/{meeting_id}  →  all questions log
 export async function getAllQuestions(meetingId) {
   if (!meetingId) return { questions: [], total: 0 };
   if (CONFIG.USE_MOCK_API) return MockApi.getAllQuestions(meetingId);
@@ -225,9 +198,7 @@ export async function getAllQuestions(meetingId) {
   const questions = rawList
     .map(q => {
       const rawName = q.user_name || q.username || q.userName;
-      const resolvedName = (rawName && rawName.trim())
-        ? rawName.trim()
-        : 'Participant';
+      const resolvedName = (rawName && rawName.trim()) ? rawName.trim() : 'Participant';
       return {
         ...q,
         user_name:  resolvedName,
@@ -241,11 +212,6 @@ export async function getAllQuestions(meetingId) {
   return { questions, total: data?.total_questions ?? questions.length };
 }
 
-/**
- * Check if a SPECIFIC meeting is active by its ID.
- * ONLY calls /status/{meeting_id} — NO discovery fallback.
- * Use this when you have a real Zoom meeting_id.
- */
 export async function checkMeetingStatusById(meetingId) {
   if (!meetingId) {
     throw new Error("Meeting ID is missing.");
@@ -280,7 +246,6 @@ export async function checkMeetingStatus(meetingId) {
   return checkMeetingStatusById(meetingId);
 }
 
-// POST /end_meeting  →  { meeting_id }
 export async function endMeeting(meetingId) {
   if (!meetingId) {
     throw new Error("Meeting ID is missing.");
@@ -293,7 +258,6 @@ export async function endMeeting(meetingId) {
   }
 }
 
-// ---- Mock API ----
 const MockApi = {
   _meetings: {},
 

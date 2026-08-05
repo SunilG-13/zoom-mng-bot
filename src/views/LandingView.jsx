@@ -1,7 +1,3 @@
-/* ============================================
-   MNG Bot — Landing View (Virtual Event Access)
-   Matched 1:1 with user reference layout
-   ============================================ */
 import { useState } from 'react';
 import { Icons } from '../components/Icons';
 

@@ -1,7 +1,3 @@
-/* ============================================
-   MNG Bot — Waiting View
-   Style matched 1:1 with mng-meeting-room
-   ============================================ */
 import { useEffect, useState, useRef } from 'react';
 import { checkMeetingStatusById } from '../api';
 import { Icons } from '../components/Icons';

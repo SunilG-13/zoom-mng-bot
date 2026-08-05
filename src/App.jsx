@@ -1,16 +1,4 @@
-/* ============================================
-   MNG Bot — Main App Controller
-
-   ARCHITECTURE:
-   - Landing → Host Entry or Participant Entry
-   - Host: Host Entry → (start_meeting API) → Chat + Dashboard
-   - Participant: Participant Entry → (check status) → Waiting or Chat
-   - Waiting → (auto-poll) → Chat when host starts
-   
-   Meeting ID entered by the user is the SINGLE SOURCE OF TRUTH.
-   No Zoom SDK auto-detection for meeting_id or role.
-   ============================================ */
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { ToastProvider, useToast } from './components/Toast';
 import { EndMeetingModal } from './components/Modal';
 import LandingView from './views/LandingView';
@@ -22,7 +10,6 @@ import DashboardView from './views/DashboardView';
 import ExportModal from './views/ExportView';
 import SessionHeader from './components/SessionHeader';
 import { endMeeting } from './api';
-import { Icons } from './components/Icons';
 
 function AppInner() {
   const [currentView, setCurrentView] = useState('landing');
@@ -38,9 +25,6 @@ function AppInner() {
 
   const meetingIdRef = useRef(null);
 
-  /**
-   * Reset all state — return to landing page.
-   */
   const resetAllState = useCallback(() => {
     meetingIdRef.current = null;
     setContext(null);
@@ -54,26 +38,16 @@ function AppInner() {
     setCurrentView('landing');
   }, []);
 
-  /**
-   * FULL END MEETING: API call + state reset.
-   */
   const performFullReset = useCallback(async (meetingId) => {
     const id = meetingId || meetingIdRef.current;
     if (id) {
       try {
         await endMeeting(id);
-      } catch (_) {
-        console.warn('⚠️ Backend endMeeting failed, continuing with local reset');
-      }
+      } catch (_) {}
     }
-
     resetAllState();
-    console.log('🧹 Full meeting reset complete');
   }, [resetAllState]);
 
-  /**
-   * Landing View → User selects Host or Participant.
-   */
   const handleSelectRole = useCallback((role) => {
     if (role === 'host') {
       setCurrentView('host-entry');
@@ -82,16 +56,9 @@ function AppInner() {
     }
   }, []);
 
-  /**
-   * HOST: Meeting started successfully → navigate to Chat + Dashboard.
-   * Called from HostEntryView after /start_meeting succeeds.
-   */
   const handleHostMeetingStarted = useCallback((data) => {
     const { meeting_id, company, host_name } = data;
-
-    // Generate a session_id for this host session
     const session_id = crypto.randomUUID();
-
     meetingIdRef.current = meeting_id;
 
     const newContext = {
@@ -113,16 +80,9 @@ function AppInner() {
     setCurrentView('chat');
   }, []);
 
-  /**
-   * PARTICIPANT: Joined meeting → navigate to Chat or Waiting.
-   * Called from ParticipantEntryView after /status check.
-   */
   const handleParticipantJoin = useCallback((data) => {
-    const { meeting_id, participant_name, meetingActive, company, host_name } = data;
-
-    // Generate a session_id for this participant session
+    const { meeting_id, participant_name, meetingActive, company } = data;
     const session_id = crypto.randomUUID();
-
     meetingIdRef.current = meeting_id;
 
     const newContext = {
@@ -138,7 +98,6 @@ function AppInner() {
     setIsHost(false);
 
     if (meetingActive && company) {
-      // Meeting is already active → go straight to Chat
       setMeetingInfo({
         company: company.toLowerCase().replace(/\s+/g, '_'),
         companyName: company,
@@ -146,17 +105,11 @@ function AppInner() {
       setResetGeneration(prev => prev + 1);
       setCurrentView('chat');
     } else {
-      // Meeting not started yet → go to Waiting
       setCurrentView('waiting');
     }
   }, []);
 
-  /**
-   * WAITING → Meeting becomes active → navigate to Chat.
-   * Called from WaitingView when polling detects the meeting started.
-   */
   const handleWaitingMeetingActive = useCallback((meetingData) => {
-    // meetingData = { meeting_id, company, host_name }
     if (meetingData.company) {
       setMeetingInfo({
         company: meetingData.company.toLowerCase().replace(/\s+/g, '_'),
@@ -167,10 +120,8 @@ function AppInner() {
     setCurrentView('chat');
   }, []);
 
-  // Navigate between Chat and Dashboard (host only)
   const handleNavigate = useCallback((view) => {
     if (view === 'chat' && !context?.meeting_id) {
-      console.error('Meeting ID missing');
       return;
     }
     setCurrentView(view);
@@ -198,7 +149,6 @@ function AppInner() {
   }, []);
 
   const handleChangeCompany = useCallback(() => {
-    // Go back to host entry to change company
     setMeetingInfo({ company: null, companyName: null });
     setPendingCount(0);
     setExportLogs([]);
@@ -239,7 +189,6 @@ function AppInner() {
       );
     }
 
-    // Chat + Dashboard views under fixed SessionHeader
     return (
       <div className="flex flex-col h-full w-full">
         <SessionHeader

@@ -1,7 +1,3 @@
-/* ============================================
-   MNG Bot — Host Entry View
-   Clean Centered Setup Form with Back + Start Session button row
-   ============================================ */
 import { useState, useRef } from 'react';
 import { Icons } from '../components/Icons';
 import { startMeeting, CONFIG } from '../api';

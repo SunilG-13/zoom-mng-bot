@@ -1,20 +1,3 @@
-/* ============================================
-   MNG Bot — Setup View
-   
-   KEY CHANGES (fixes Issues 1, 4):
-   
-   1. Removed manual name input for participants
-      — Name is ALWAYS fetched from Zoom SDK (context.user_name)
-   
-   2. Removed "select role" screen
-      — Role is auto-detected from Zoom SDK in SplashView
-   
-   3. If not a host, returns null immediately
-      — Participants never see Setup (they go Chat or Waiting)
-   
-   4. Uses context.user_name for display 
-      — Shows "BIZ AI" or "Sunil Kumar", never "Host" or "Participant"
-   ============================================ */
 import { useState, useRef, useEffect } from 'react';
 import { Icons } from '../components/Icons';
 import { CONFIG, startMeeting } from '../api';
@@ -112,9 +95,7 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
 
   const stepLabels = ['Locating folder', 'Reading PDFs', 'Processing text', 'Building index', 'Ready'];
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // SCREEN: HOST — Enter Display Name & Company
-  // ════════════════════════════════════════════════════════════════════════════
+  // Screen: Host Enter Display Name & Company
   if (screen === 'host') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--color-bg-primary)' }}>
@@ -177,9 +158,7 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
     );
   }
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // SCREEN: HOST LOADING
-  // ════════════════════════════════════════════════════════════════════════════
+  // Screen: Host Loading
   if (screen === 'host-loading') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg-primary)', padding: 24 }}>
@@ -208,9 +187,7 @@ export default function SetupView({ context, onHostMeetingStarted, onClosePanel 
     );
   }
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // SCREEN: HOST DONE ✅
-  // ════════════════════════════════════════════════════════════════════════════
+  // Screen: Host Done
   if (screen === 'host-done') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg-primary)', padding: 24 }}>

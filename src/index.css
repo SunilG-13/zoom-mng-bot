@@ -1,10 +1,5 @@
 @import "tailwindcss";
 
-/* ============================================
-   MNG Bot — Design System
-   Matched 1:1 with D:\E drive\All Projects\mng-meeting-room
-   ============================================ */
-
 :root {
   /* Precise Color Mapping from Final Screen Reference */
   --c-app-bg:         #2B2D33;

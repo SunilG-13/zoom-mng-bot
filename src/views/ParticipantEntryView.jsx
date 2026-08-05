@@ -1,7 +1,3 @@
-/* ============================================
-   MNG Bot — Participant Entry View
-   Clean Centered Form with Back + Join Session button row
-   ============================================ */
 import { useState } from 'react';
 import { Icons } from '../components/Icons';
 import { checkMeetingStatusById } from '../api';

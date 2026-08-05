@@ -16,18 +16,18 @@ export default function LandingView({ onSelectRole }) {
 
   return (
     <div className="flex flex-col items-center justify-center h-full w-full bg-[#2B2D33] p-6">
-      <div className="max-w-[440px] w-full bg-[#363B48] rounded-[24px] px-8 py-10 shadow-2xl shadow-black/50 flex flex-col items-center text-center border border-white/5">
+      <div className="max-w-[440px] w-full bg-[#363B48] rounded-[24px] px-8 py-6 shadow-2xl shadow-black/50 flex flex-col items-center text-center border border-white/5">
         {/* Official Brand MNG Logo Header */}
-        <div className="flex items-center justify-center mb-5">
-          <img src="./MNG_Health.png" alt="MNG Health" className="h-10 w-auto object-contain drop-shadow-md" />
+        <div className="flex items-center justify-center mb-3">
+          <img src="./MNG_Health.png" alt="MNG Health" className="h-8 w-auto object-contain drop-shadow-md" />
         </div>
 
         {/* Title & Subtitle */}
-        <h1 className="text-[26px] font-bold text-white mb-1.5 tracking-tight">
+        <h1 className="text-[22px] md:text-[26px] font-bold text-white mb-1.5 tracking-tight">
           Virtual Event Access
         </h1>
 
-        <p className="text-[13px] text-[#9CA3B6] mb-8 leading-relaxed">
+        <p className="text-[13px] text-[#9CA3B6] mb-4 leading-relaxed">
           Please select your access role to join the session
         </p>
 
@@ -41,7 +41,7 @@ export default function LandingView({ onSelectRole }) {
           {/* ORGANIZER Card */}
           <div
             onClick={() => setSelectedRole('host')}
-            className={`p-6 rounded-[16px] min-h-[140px] cursor-pointer flex flex-col items-center justify-center text-center transition-all duration-200 ${
+            className={`p-4 rounded-[16px] min-h-[140px] cursor-pointer flex flex-col items-center justify-center text-center transition-all duration-200 ${
               selectedRole === 'host'
                 ? 'bg-[#2777FF]/15 border-2 border-[#2777FF] shadow-[0_0_24px_rgba(39,119,255,0.3)]'
                 : 'bg-[#2A2E39] border border-white/5 hover:border-white/15'
@@ -64,7 +64,7 @@ export default function LandingView({ onSelectRole }) {
           {/* GUEST Card */}
           <div
             onClick={() => setSelectedRole('participant')}
-            className={`p-6 rounded-[16px] min-h-[140px] cursor-pointer flex flex-col items-center justify-center text-center transition-all duration-200 ${
+            className={`p-4 rounded-[16px] min-h-[140px] cursor-pointer flex flex-col items-center justify-center text-center transition-all duration-200 ${
               selectedRole === 'participant'
                 ? 'bg-[#2777FF]/15 border-2 border-[#2777FF] shadow-[0_0_24px_rgba(39,119,255,0.3)]'
                 : 'bg-[#2A2E39] border border-white/5 hover:border-white/15'

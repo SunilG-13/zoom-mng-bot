@@ -42,32 +42,12 @@ export default function SessionHeader({
   return (
     <header className="app-header h-[56px] sm:h-[64px] px-3 sm:px-6 bg-[#363B48] border-b border-white/5 flex items-center justify-between shrink-0 z-[200] relative">
       {/* Left: Logo & Company Context */}
-      <div className="items-center gap-2 sm:gap-3 min-w-0 hidden md:flex justify-center">
-        <div className="hidden md:block">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <img src="./MNG_Health.png" alt="MNG Health" className="h-6 sm:h-8 w-auto object-contain shrink-0 drop-shadow" />
-        </div>
-        <div className="min-w-0">
+        <div className="min-w-0 hidden sm:block">
           <div className="text-xs sm:text-[15px] font-bold text-white leading-snug truncate">
-            <span className="hidden md:inline">MNG Intelligence Session</span>
-            <span className="hidden">MNG Session</span>
+            MNG Intelligence Session
           </div>
-          {/* <div className="flex items-center gap-1 mt-0.5 min-w-0">
-            <span className="text-[10px] sm:text-[11px] text-[#82B4FF] font-semibold truncate max-w-[100px] sm:max-w-[150px]">
-              🏢 {meetingInfo?.companyName || 'Company'}
-            </span>
-            <span className="text-[9px] sm:text-[10px] text-[#9CA3B6] font-mono">
-              • {meetingId}
-            </span>
-            {isHost && onChangeCompany && (
-              <button
-                onClick={onChangeCompany}
-                className="text-[9px] sm:text-[10px] px-1 py-[1px] text-[#82B4FF] border border-[#2777FF]/30 rounded bg-transparent cursor-pointer hover:bg-[#2777FF]/10 transition-colors hidden sm:inline-block"
-                title="Change Company Knowledge Base"
-              >
-                ✏️
-              </button>
-            )}
-          </div> */}
         </div>
       </div>
 
@@ -97,7 +77,7 @@ export default function SessionHeader({
       )}
 
       {/* Right: Live Badge & Profile Avatar */}
-      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 ml-auto">
       
 
         {/* Profile Icon Button with Hover Dropdown */}
@@ -108,6 +88,7 @@ export default function SessionHeader({
         >
           <button
             type="button"
+            onClick={() => setIsOpen(prev => !prev)}
             className={`flex items-center gap-1.5 sm:gap-2.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-full border transition-all cursor-pointer ${
               isOpen
                 ? 'bg-white/10 border-[#2777FF] shadow-[0_0_14px_rgba(39,119,255,0.35)]'
@@ -141,7 +122,7 @@ export default function SessionHeader({
 
           {/* Hover Dropdown Menu */}
           {isOpen && (
-            <div className="absolute right-0 top-full mt-2 w-64 sm:w-72 bg-[#2A2E39] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 backdrop-blur-xl p-3 sm:p-3.5 z-[300] animate-fade-in text-left">
+            <div className="absolute right-0 top-full mt-2 w-64 sm:w-72 max-w-[calc(100vw-24px)] bg-[#2A2E39] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 backdrop-blur-xl p-3 sm:p-3.5 z-[300] animate-fade-in text-left">
               {/* Profile Card Header */}
               <div className="flex items-center gap-2.5 sm:gap-3 p-2.5 rounded-xl bg-white/5 border border-white/5 mb-2.5">
                 <div className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-[#2777FF] to-[#32A2FF] text-white font-bold text-sm shadow-md shrink-0">
@@ -165,21 +146,21 @@ export default function SessionHeader({
 
               {/* Session Meta Info */}
               <div className="px-2 py-1 flex flex-col gap-1.5 text-xs text-[#9CA3B6]">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] sm:text-[11px] text-[#6C748A]">Company KB:</span>
-                  <span className="font-semibold text-[#82B4FF] truncate max-w-[140px]">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] sm:text-[11px] text-[#6C748A] shrink-0">Company KB:</span>
+                  <span className="font-semibold text-[#82B4FF] truncate max-w-[130px]">
                     🏢 {meetingInfo?.companyName || 'N/A'}
                   </span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] sm:text-[11px] text-[#6C748A]">Meeting ID:</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-white font-semibold">{meetingId || 'N/A'}</span>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] sm:text-[11px] text-[#6C748A] shrink-0">Meeting ID:</span>
+                  <div className="flex items-center gap-1.5 shrink-0 min-w-0">
+                    <span className="font-mono text-white font-semibold text-[11px] sm:text-xs truncate max-w-[80px] sm:max-w-[120px]">{meetingId || 'N/A'}</span>
                     {meetingId && (
                       <button
                         type="button"
                         onClick={handleCopyId}
-                        className="px-1.5 py-0.5 text-[10px] text-[#82B4FF] hover:text-white bg-white/5 hover:bg-white/10 rounded transition-colors cursor-pointer flex items-center gap-1"
+                        className="px-1.5 py-0.5 text-[10px] text-[#82B4FF] hover:text-white bg-white/5 hover:bg-white/10 rounded transition-colors cursor-pointer flex items-center gap-1 shrink-0"
                         title="Copy Meeting ID"
                       >
                         {copiedId ? (

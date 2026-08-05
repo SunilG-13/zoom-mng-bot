@@ -1,14 +1,6 @@
 /* ============================================
    MNG Bot — Participant Entry View
-
-   Participant enters:
-     - Name
-     - Meeting ID (e.g. HONDA001)
-
-   On "Join Meeting":
-     GET /status/{meeting_id}
-     If meeting started → navigate to Chat
-     If not started → navigate to Waiting Screen
+   Clean Centered Form with Back + Join Session button row
    ============================================ */
 import { useState } from 'react';
 import { Icons } from '../components/Icons';
@@ -33,12 +25,9 @@ export default function ParticipantEntryView({ onJoin, onBack }) {
 
     try {
       const res = await checkMeetingStatusById(finalMeetingId);
-
-      // Determine if the meeting is active
       const isActive = res.active === true || res.status === true;
 
       if (isActive) {
-        // Meeting is active → go directly to Chat
         onJoin({
           meeting_id: finalMeetingId,
           participant_name: finalName,
@@ -47,7 +36,6 @@ export default function ParticipantEntryView({ onJoin, onBack }) {
           host_name: res.host_name || null,
         });
       } else {
-        // Meeting not started → go to Waiting Screen
         onJoin({
           meeting_id: finalMeetingId,
           participant_name: finalName,
@@ -57,8 +45,6 @@ export default function ParticipantEntryView({ onJoin, onBack }) {
         });
       }
     } catch (err) {
-      // If /status fails (e.g. network error), still send to waiting
-      console.warn('Participant join: status check failed:', err.message);
       onJoin({
         meeting_id: finalMeetingId,
         participant_name: finalName,
@@ -72,80 +58,93 @@ export default function ParticipantEntryView({ onJoin, onBack }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--color-bg-primary)' }}>
-      <div className="app-header">
-        <div className="app-header__left">
+    <div className="flex flex-col items-center justify-center h-full w-full bg-[#2B2D33] p-6">
+      {/* Centered Join Form Card */}
+      <div className="max-w-[440px] w-full bg-[#363B48] rounded-[24px] px-7 py-9 shadow-2xl shadow-black/50 flex flex-col items-center border border-white/5">
+        {/* Official Brand MNG Logo Header */}
+        <div className="flex items-center justify-center mb-3">
+          <img src="./MNG_Health.png" alt="MNG Health" className="h-9 w-auto object-contain drop-shadow-md" />
+        </div>
+
+        <h2 className="text-[24px] font-bold text-white mb-1 text-center">
+          Join Clinical Session
+        </h2>
+
+        <p className="text-[13px] text-[#9CA3B6] mb-6 text-center leading-relaxed">
+          Enter your display name and Meeting ID provided by the host.
+        </p>
+
+        {/* Form Inputs Container */}
+        <div className="w-full flex flex-col gap-4 mb-6">
+          
+          {/* Participant Name Input */}
+          <div>
+            <label className="text-[11px] font-bold text-[#9CA3B6] uppercase tracking-wider mb-1.5 block text-left">
+              Your Display Name
+            </label>
+            <div className="search-input rounded-[12px]">
+              <span className="text-[#82B4FF]">{Icons.user}</span>
+              <input
+                type="text"
+                placeholder="e.g. Alex Morgan"
+                value={participantName}
+                onChange={e => setParticipantName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && canJoin && handleJoin()}
+                autoFocus
+              />
+            </div>
+          </div>
+
+          {/* Meeting ID Input */}
+          <div>
+            <label className="text-[11px] font-bold text-[#9CA3B6] uppercase tracking-wider mb-1.5 block text-left">
+              Meeting ID
+            </label>
+            <div className="search-input rounded-[12px]">
+              <span className="text-[#82B4FF]">{Icons.fileText}</span>
+              <input
+                type="text"
+                placeholder="e.g. MNG001"
+                value={meetingId}
+                onChange={e => setMeetingId(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && canJoin && handleJoin()}
+              />
+            </div>
+          </div>
+
+        </div>
+
+        {/* Action Buttons Row: Back + Join Session */}
+        <div className="flex gap-3 w-full">
           <button
-            className="btn btn--ghost btn--sm"
+            type="button"
             onClick={onBack}
-            style={{ padding: '4px 8px', marginRight: 4 }}
-            title="Back"
+            className="w-[32%] py-3.5 px-4 rounded-[14px] bg-[#44495B] hover:bg-[#4c5266] active:scale-[0.99] text-white text-sm font-semibold border border-white/10 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
           >
             ← Back
           </button>
-          <div className="app-header__logo">{Icons.bot}</div>
-          <span className="app-header__title">Join Meeting</span>
-        </div>
-      </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '24px 16px', overflowY: 'auto' }}>
-        <h2 style={{ fontSize: 18, color: 'var(--color-text-primary)', marginBottom: 6 }}>Join a Meeting 🎯</h2>
-        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 20 }}>
-          Enter your name and the Meeting ID provided by the host.
-        </p>
-
-        {/* Participant Name */}
-        <label style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6, display: 'block' }}>
-          Your Name
-        </label>
-        <div className="search-input" style={{ marginBottom: 16 }}>
-          <span className="search-input__icon">{Icons.user}</span>
-          <input
-            type="text"
-            placeholder="e.g. Ravi"
-            value={participantName}
-            onChange={e => setParticipantName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && canJoin && handleJoin()}
-            autoFocus
-          />
+          <button
+            type="button"
+            disabled={!canJoin || isChecking}
+            onClick={handleJoin}
+            className={`w-[68%] py-3.5 px-[18px] rounded-[14px] text-white text-sm font-bold border-0 flex items-center justify-center gap-2 transition-all ${
+              canJoin && !isChecking
+                ? 'bg-[#2777FF] hover:bg-[#1e5fc9] active:scale-[0.99] cursor-pointer shadow-[0_6px_20px_rgba(39,119,255,0.35)]'
+                : 'bg-[#2777FF]/40 cursor-not-allowed'
+            }`}
+          >
+            {isChecking ? (
+              <><div className="spinner spinner--sm border-t-white" /> Verifying...</>
+            ) : (
+              <>Join Session →</>
+            )}
+          </button>
         </div>
 
-        {/* Meeting ID */}
-        <label style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6, display: 'block' }}>
-          Meeting ID
-        </label>
-        <div className="search-input" style={{ marginBottom: 20 }}>
-          <span className="search-input__icon">{Icons.fileText}</span>
-          <input
-            type="text"
-            placeholder="e.g. HONDA001"
-            value={meetingId}
-            onChange={e => setMeetingId(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && canJoin && handleJoin()}
-          />
-        </div>
-
-        <button
-          className="btn btn--primary btn--lg btn--full"
-          disabled={!canJoin || isChecking}
-          onClick={handleJoin}
-        >
-          {isChecking ? (
-            <><div className="spinner spinner--sm" style={{ width: 16, height: 16 }} /> Checking...</>
-          ) : (
-            <>{Icons.arrowRight} Join Meeting</>
-          )}
-        </button>
-
-        <p style={{
-          marginTop: 16,
-          fontSize: 11,
-          color: 'var(--color-text-muted)',
-          textAlign: 'center',
-          lineHeight: 1.5,
-        }}>
-          If the host hasn't started the meeting yet,<br />
-          you'll be placed in a waiting room automatically.
+        <p className="mt-5 text-[11px] text-[#6C748A] text-center leading-relaxed">
+          If the host hasn't launched the session yet,<br />
+          you will enter the waiting room automatically.
         </p>
       </div>
     </div>

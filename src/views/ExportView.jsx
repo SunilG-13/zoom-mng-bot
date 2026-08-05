@@ -1,10 +1,9 @@
 /* ============================================
    MNG Bot — Export View
-   Excel export modal with column selection
+   Excel export modal with 2-column grid selection & fixed action bar
    ============================================ */
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Icons } from '../components/Icons';
-import { Modal } from '../components/Modal';
 import { CONFIG } from '../api';
 import { useToast } from '../components/Toast';
 
@@ -16,7 +15,7 @@ function formatTimestamp(date) {
   });
 }
 
-export default function ExportModal({ logs, meetingId, companyName, onClose }) {
+export default function ExportModal({ logs = [], meetingId, companyName, onClose }) {
   const [checkedKeys, setCheckedKeys] = useState(() => {
     const keys = new Set();
     CONFIG.EXPORT_COLUMNS_DEFAULT.forEach(c => { if (c.checked) keys.add(c.key); });
@@ -24,12 +23,27 @@ export default function ExportModal({ logs, meetingId, companyName, onClose }) {
   });
   const toast = useToast();
 
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === 'Escape' && onClose) onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   const toggleKey = (key) => {
     setCheckedKeys(prev => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
+  };
+
+  const selectAll = () => {
+    const allCols = [...CONFIG.EXPORT_COLUMNS_DEFAULT, ...CONFIG.EXPORT_COLUMNS_OPTIONAL];
+    const next = new Set(allCols.map(c => c.key));
+    setCheckedKeys(next);
   };
 
   const doExport = () => {
@@ -72,7 +86,7 @@ export default function ExportModal({ logs, meetingId, companyName, onClose }) {
         // Auto-width columns
         ws['!cols'] = headers.map((h, i) => {
           let max = h.length;
-          rows.forEach(r => { if (r[i] && r[i].length > max) max = Math.min(r[i].length, 60); });
+          rows.forEach(r => { if (r[i] && String(r[i]).length > max) max = Math.min(String(r[i]).length, 60); });
           return { wch: max + 4 };
         });
 
@@ -114,7 +128,7 @@ export default function ExportModal({ logs, meetingId, companyName, onClose }) {
       }
 
       toast.success('Excel file downloaded successfully!');
-      onClose();
+      if (onClose) onClose();
     } catch (err) {
       toast.error('Export failed: ' + err.message);
     }
@@ -159,7 +173,7 @@ export default function ExportModal({ logs, meetingId, companyName, onClose }) {
       navigator.clipboard.writeText(content)
         .then(() => {
           toast.success('Excel-ready data copied! Open Excel and paste (Ctrl+V).');
-          onClose();
+          if (onClose) onClose();
         })
         .catch(err => {
           toast.error('Copy failed: ' + err.message);
@@ -170,80 +184,130 @@ export default function ExportModal({ logs, meetingId, companyName, onClose }) {
   };
 
   return (
-    <Modal
-      title="Export to Excel"
-      confirmText="Download Excel"
-      confirmClass="btn--primary"
-      onConfirm={doExport}
-      onClose={onClose}
+    <div
+      className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-[500] p-4 animate-fade-in"
+      onClick={(e) => { if (e.target === e.currentTarget && onClose) onClose(); }}
     >
-      <p className="modal__text" style={{ marginBottom: 'var(--space-4)' }}>
-        Select the columns to include in the Excel export.
-      </p>
-      
-      <div style={{
-        marginBottom: 'var(--space-4)',
-        padding: '8px 12px',
-        background: 'rgba(251, 191, 36, 0.08)',
-        border: '1px solid rgba(251, 191, 36, 0.2)',
-        borderRadius: 'var(--radius-md)',
-        fontSize: 'var(--font-size-xs)',
-        color: 'var(--color-text-primary)'
-      }}>
-        💡 <strong>Zoom App Notice:</strong> Sandboxed Zoom Apps may block standard downloads. If the download button doesn't work, click <strong>"Copy Data"</strong> below, open Excel, and paste (Ctrl+V).
-      </div>
-
-      <div className="export-modal__options">
-        <div className="export-modal__section-title">Default Columns</div>
-        {CONFIG.EXPORT_COLUMNS_DEFAULT.map(col => (
-          <label
-            key={col.key}
-            className={`checkbox${checkedKeys.has(col.key) ? ' checkbox--checked' : ''}`}
-            onClick={() => toggleKey(col.key)}
+      <div className="bg-[#363B48] border border-white/10 rounded-[24px] shadow-[0_25px_60px_rgba(0,0,0,0.6)] w-full max-w-[480px] max-h-[90vh] flex flex-col overflow-hidden text-white" role="dialog" aria-modal="true">
+        {/* Fixed Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#363B48] shrink-0">
+          <h3 className="text-base font-bold text-white flex items-center gap-2">
+            <span>📊</span>
+            <span>Export Session Data to Excel</span>
+          </h3>
+          <button
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-[#9CA3B6] hover:text-white hover:bg-white/10 transition-colors bg-transparent border-0 cursor-pointer"
+            onClick={onClose}
+            aria-label="Close"
           >
-            <span className="checkbox__input">{Icons.check}</span>
-            <span className="checkbox__label">{col.label}</span>
-          </label>
-        ))}
-        <div className="export-modal__section-title" style={{ marginTop: 'var(--space-4)' }}>Optional Columns</div>
-        {CONFIG.EXPORT_COLUMNS_OPTIONAL.map(col => (
-          <label
-            key={col.key}
-            className={`checkbox${checkedKeys.has(col.key) ? ' checkbox--checked' : ''}`}
-            onClick={() => toggleKey(col.key)}
-          >
-            <span className="checkbox__input">{Icons.check}</span>
-            <span className="checkbox__label">{col.label}</span>
-          </label>
-        ))}
-      </div>
-
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginTop: 'var(--space-4)',
-        gap: 'var(--space-2)'
-      }}>
-        <div style={{
-          padding: 'var(--space-2) var(--space-3)',
-          background: 'rgba(79, 124, 255, 0.06)',
-          borderRadius: 'var(--radius-md)',
-          fontSize: 'var(--font-size-xs)',
-          color: 'var(--color-text-muted)',
-          flex: 1
-        }}>
-          📊 {logs.length} question(s) selected
+            {Icons.x}
+          </button>
         </div>
-        <button 
-          className="btn btn--secondary btn--sm" 
-          onClick={doCopy}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-        >
-          {Icons.copy}
-          <span>Copy Data</span>
-        </button>
+
+        {/* Scrollable Content Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {/* Zoom App Notice Box */}
+          <div className="bg-amber-500/10 border border-amber-500/25 rounded-[14px] p-3.5 text-xs text-amber-200 leading-relaxed flex items-start gap-2.5">
+            <span className="text-base shrink-0">💡</span>
+            <span>
+              <strong>Zoom App Notice:</strong> Sandboxed Zoom Apps may block direct file downloads. If downloading is blocked, click <strong>"Copy Data"</strong> to copy Excel-formatted data directly to your clipboard.
+            </span>
+          </div>
+
+          {/* Default Columns Section */}
+          <div>
+            <div className="flex items-center justify-between text-[11px] font-bold text-[#82B4FF] uppercase tracking-wider mb-2.5">
+              <span>DEFAULT COLUMNS</span>
+              <button
+                onClick={selectAll}
+                className="text-[10px] text-[#82B4FF] hover:underline bg-transparent border-0 cursor-pointer"
+              >
+                Select All
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {CONFIG.EXPORT_COLUMNS_DEFAULT.map(col => {
+                const isChecked = checkedKeys.has(col.key);
+                return (
+                  <div
+                    key={col.key}
+                    onClick={() => toggleKey(col.key)}
+                    className={`px-3 py-2.5 rounded-[12px] text-xs font-semibold cursor-pointer flex items-center gap-2.5 transition-all select-none ${
+                      isChecked
+                        ? 'bg-[#2777FF]/15 border border-[#2777FF] text-white shadow-sm'
+                        : 'bg-[#2A2E39] border border-white/5 text-[#9CA3B6] hover:bg-white/5'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded flex items-center justify-center text-[10px] shrink-0 transition-colors ${
+                      isChecked ? 'bg-[#2777FF] text-white' : 'bg-black/30 border border-white/20 text-transparent'
+                    }`}>
+                      {Icons.check}
+                    </div>
+                    <span className="truncate">{col.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Optional Columns Section */}
+          <div>
+            <div className="text-[11px] font-bold text-[#82B4FF] uppercase tracking-wider mb-2.5 mt-4">
+              OPTIONAL COLUMNS
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {CONFIG.EXPORT_COLUMNS_OPTIONAL.map(col => {
+                const isChecked = checkedKeys.has(col.key);
+                return (
+                  <div
+                    key={col.key}
+                    onClick={() => toggleKey(col.key)}
+                    className={`px-3 py-2.5 rounded-[12px] text-xs font-semibold cursor-pointer flex items-center gap-2.5 transition-all select-none ${
+                      isChecked
+                        ? 'bg-[#2777FF]/15 border border-[#2777FF] text-white shadow-sm'
+                        : 'bg-[#2A2E39] border border-white/5 text-[#9CA3B6] hover:bg-white/5'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded flex items-center justify-center text-[10px] shrink-0 transition-colors ${
+                      isChecked ? 'bg-[#2777FF] text-white' : 'bg-black/30 border border-white/20 text-transparent'
+                    }`}>
+                      {Icons.check}
+                    </div>
+                    <span className="truncate">{col.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Fixed Footer Action Bar */}
+        <div className="px-6 py-4 border-t border-white/5 bg-[#363B48] flex items-center justify-between shrink-0 gap-3">
+          <div className="px-3 py-1.5 rounded-full bg-[#2A2E39] border border-white/5 text-xs text-[#9CA3B6] font-semibold">
+            📊 {logs.length} Questions
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              className="btn btn--secondary px-3.5 py-2 text-xs rounded-full inline-flex items-center gap-1.5"
+              onClick={doCopy}
+            >
+              {Icons.copy}
+              <span>Copy Data</span>
+            </button>
+
+            <button
+              className="btn btn--primary px-4 py-2 text-xs rounded-full font-bold inline-flex items-center gap-1.5"
+              onClick={doExport}
+            >
+              {Icons.download}
+              <span>Download Excel</span>
+            </button>
+          </div>
+        </div>
       </div>
-    </Modal>
+    </div>
   );
 }

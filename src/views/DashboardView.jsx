@@ -1,25 +1,44 @@
 /* ============================================
    MNG Bot — Dashboard View (Host Only)
-   Filter by Status + Filter by User + Excel Export
-   
-   Uses context.meeting_id (user-entered) for ALL API calls.
-   Shows: Participant Name, Question, AI Answer, Status, Timestamp.
+   Matched 1:1 with D:\E drive\All Projects\mng-meeting-room
    ============================================ */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Icons } from '../components/Icons';
 import { getAllQuestions } from '../api';
 import { useToast } from '../components/Toast';
 
-function formatTime(date) {
-  if (!(date instanceof Date)) date = new Date(date);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function parseDate(dateVal) {
+  if (!dateVal) return new Date();
+  if (dateVal instanceof Date) return dateVal;
+  
+  if (typeof dateVal === 'number') return new Date(dateVal);
+
+  if (typeof dateVal === 'string') {
+    let str = dateVal.trim();
+    if (/^\d+$/.test(str)) {
+      return new Date(parseInt(str, 10));
+    }
+    // If backend returns UTC ISO string without 'Z' or offset, append 'Z' so browser converts UTC to Local timezone
+    if (!str.endsWith('Z') && !str.includes('+') && !/-\d{2}:\d{2}$/.test(str)) {
+      str = str.replace(' ', 'T') + 'Z';
+    }
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  return new Date();
 }
 
-function formatTimestamp(date) {
-  if (!(date instanceof Date)) date = new Date(date);
+function formatTime(dateVal) {
+  const date = parseDate(dateVal);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+function formatTimestamp(dateVal) {
+  const date = parseDate(dateVal);
   return date.toLocaleString([], {
     year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: true
   });
 }
 
@@ -43,15 +62,7 @@ function normalizeStatus(s) {
   return 'Unresolved';
 }
 
-const TABS = [
-  { key: 'all',        label: 'All' },
-  { key: 'Resolved',   label: 'Resolved' },
-  { key: 'Partial',    label: 'Partial' },
-  { key: 'Unresolved', label: 'Unresolved' },
-  { key: 'pending',    label: 'Pending' },
-];
-
-export default function DashboardView({ context, meetingInfo, onNavigate, onEndMeeting, onChangeCompany, onExport, onLogsUpdated }) {
+export default function DashboardView({ context, meetingInfo, onExport, onLogsUpdated }) {
   const [activeTab,    setActiveTab]    = useState('all');
   const [selectedUser, setSelectedUser] = useState('all');
   const [logs,         setLogs]         = useState([]);
@@ -64,7 +75,6 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
   const partial    = useMemo(() => logs.filter(q => normalizeStatus(q.status) === 'Partial').length,    [logs]);
   const unresolved = useMemo(() => logs.filter(q => normalizeStatus(q.status) === 'Unresolved').length, [logs]);
   const total      = logs.length;
-  const pendingCount = partial + unresolved;
 
   const userList = useMemo(() => {
     const names = [...new Set(logs.map(q => q.user_name || q.username).filter(Boolean))];
@@ -84,7 +94,6 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
     return result;
   }, [logs, activeTab, selectedUser]);
 
-  // Use user-entered meeting_id
   const meetingId = context?.meeting_id;
 
   const loadData = useCallback(async (showSpinner = false) => {
@@ -106,14 +115,10 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
     loadData();
     const handler = (e) => {
       if (e.detail) {
-        // Ensure event matches current meeting_id
         const eventMeetingId = e.detail.meeting_id || e.detail.meetingUUID || e.detail.meetingId;
         const questionsList = Array.isArray(e.detail) ? e.detail : e.detail.questions;
 
-        if (eventMeetingId && meetingId && eventMeetingId !== meetingId) {
-          console.log(`🛡️ DashboardView ignored mng-logs-updated event for meeting=${eventMeetingId} (current: ${meetingId})`);
-          return;
-        }
+        if (eventMeetingId && meetingId && eventMeetingId !== meetingId) return;
 
         if (questionsList) {
           setLogs(questionsList);
@@ -142,98 +147,110 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
     }
   };
 
+  const statCards = [
+    { key: 'all',        val: total,      label: 'TOTAL ASKED',  color: '#82B4FF', border: '#2777FF', activeBg: 'rgba(39, 119, 255, 0.18)', glow: 'rgba(39, 119, 255, 0.35)', icon: '📊' },
+    { key: 'Resolved',   val: resolved,   label: 'RESOLVED',     color: '#32D74B', border: '#32D74B', activeBg: 'rgba(50, 215, 75, 0.18)',  glow: 'rgba(50, 215, 75, 0.35)',  icon: '✓' },
+    { key: 'Partial',    val: partial,    label: 'PARTIAL',      color: '#F59E0B', border: '#F59E0B', activeBg: 'rgba(245, 158, 11, 0.18)', glow: 'rgba(245, 158, 11, 0.35)', icon: '⚠️' },
+    { key: 'Unresolved', val: unresolved, label: 'UNRESOLVED',   color: '#E12A1F', border: '#E12A1F', activeBg: 'rgba(225, 42, 31, 0.18)',  glow: 'rgba(225, 42, 31, 0.35)',  icon: '✖' },
+  ];
+
   return (
-    <div className="dashboard">
-      <div className="app-header">
-        <div className="app-header__left">
-          <div className="app-header__logo">{Icons.bot}</div>
-          <div>
-            <span className="app-header__title">Host Dashboard</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
-              <span>🏢 {meetingInfo?.companyName || 'Meeting'} &bull; {meetingId} &bull; {total} Q&A</span>
-              {onChangeCompany && (
-                <button
-                  className="btn btn--ghost btn--xs"
-                  onClick={onChangeCompany}
-                  style={{ fontSize: 9, padding: '1px 5px', height: 'auto', color: 'var(--color-accent-blue)', border: '1px solid rgba(79,124,255,0.3)', borderRadius: 4 }}
-                  title="Change Company Knowledge Base"
-                >
-                  ✏️ Change
-                </button>
-              )}
+    <div className="dashboard bg-[#2B2D33] h-full flex flex-col">
+      {/* Stat Metric Filter Cards */}
+      <div className="grid grid-cols-4 p-5 pb-4 gap-3">
+        {statCards.map(s => {
+          const isActive = activeTab === s.key;
+          return (
+            <div
+              key={s.key}
+              onClick={() => switchTab(s.key)}
+              style={{
+                backgroundColor: isActive ? s.activeBg : '#363B48',
+                border: isActive ? `2px solid ${s.border}` : '1px solid rgba(255, 255, 255, 0.06)',
+                boxShadow: isActive ? `0 0 20px ${s.glow}` : 'none',
+              }}
+              className="cursor-pointer rounded-[18px] p-4 transition-all duration-200 relative overflow-hidden"
+              title={'Filter questions: ' + s.label}
+            >
+              <div
+                style={{ backgroundColor: s.border, opacity: isActive ? 1 : 0.4 }}
+                className="absolute top-0 left-0 right-0 h-1"
+              />
+
+              <div className="flex items-center justify-between mb-1">
+                <span style={{ color: s.color }} className="text-[28px] font-extrabold leading-none">
+                  {s.val}
+                </span>
+                <span className={`text-sm ${isActive ? 'opacity-100' : 'opacity-60'}`}>
+                  {s.icon}
+                </span>
+              </div>
+
+              <div className={`text-[11px] font-bold tracking-wider flex items-center justify-between ${isActive ? 'text-white' : 'text-[#9CA3B6]'}`}>
+                <span>{s.label}</span>
+                {isActive && (
+                  <span style={{ color: s.color }} className="text-[10px] font-bold">ACTIVE</span>
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-        <div className="app-header__right">
-          <button className="btn btn--secondary btn--sm" onClick={() => onNavigate('chat')} title="Back to Chat" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {Icons.messageSquare}<span>Chat</span>
-          </button>
-          <button className="btn btn--danger btn--sm" onClick={onEndMeeting} title="End Meeting">{Icons.power}<span>End</span></button>
-        </div>
+          );
+        })}
       </div>
 
-      <div className="dashboard__stats" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-        {[
-          { key: 'all',        val: total,      label: 'ALL',        cls: 'stat-card--total' },
-          { key: 'Resolved',   val: resolved,   label: 'RESOLVED',   cls: 'stat-card--resolved' },
-          { key: 'Partial',    val: partial,    label: 'PARTIAL',    cls: 'stat-card--partial' },
-          { key: 'Unresolved', val: unresolved, label: 'UNRESOLVED', cls: 'stat-card--unresolved' },
-        ].map(s => (
-          <div key={s.key}
-            className={'stat-card ' + s.cls + (activeTab === s.key ? ' stat-card--active' : '')}
-            onClick={() => switchTab(s.key)}
-            style={{ cursor: 'pointer', outline: activeTab === s.key ? '2px solid var(--color-accent-blue)' : 'none' }}
-            title={'Filter: ' + s.label}
+      {/* Toolbar & Filters */}
+      <div className="px-5 pb-3.5 flex items-center justify-between">
+        <div className="flex gap-2.5 items-center">
+          <select
+            value={selectedUser}
+            onChange={e => { setSelectedUser(e.target.value); setExpandedRow(null); }}
+            className="bg-[#363B48] border border-white/10 rounded-full text-white text-xs font-semibold px-4 py-2 cursor-pointer outline-none shadow-md"
           >
-            <div className="stat-card__value">{s.val}</div>
-            <div className="stat-card__label">{s.label}</div>
-          </div>
-        ))}
+            <option value="all">👥 All Users</option>
+            {userList.map(u => <option key={u} value={u}>👤 {u}</option>)}
+          </select>
+
+          {/* Visible Refresh Button */}
+          <button
+            className="btn btn--secondary px-4 py-2 text-xs rounded-full inline-flex items-center gap-1.5"
+            onClick={() => loadData(true)}
+            title="Refresh Questions"
+          >
+            <span className={`inline-flex w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`}>
+              {Icons.loader}
+            </span>
+            <span>Refresh</span>
+          </button>
+        </div>
+
+        <button
+          className="btn btn--primary px-4.5 py-2 text-[13px] rounded-full"
+          onClick={handleExport}
+          disabled={filteredLogs.length === 0}
+          title={'Export ' + filteredLogs.length + ' questions'}
+        >
+          {Icons.download}<span>Excel Report ({filteredLogs.length})</span>
+        </button>
       </div>
 
-      <div className="dashboard__toolbar">
-        <div className="dashboard__actions" style={{ gap: 6, width: '100%', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <select value={selectedUser} onChange={e => { setSelectedUser(e.target.value); setExpandedRow(null); }}
-              style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-md)', color: 'var(--color-text-primary)', fontSize: 'var(--font-size-xs)', padding: '4px 8px', cursor: 'pointer', maxWidth: 130 }}>
-              <option value="all">👥 All Users</option>
-              {userList.map(u => <option key={u} value={u}>👤 {u}</option>)}
-            </select>
-            <button className={'btn btn--secondary btn--sm' + (isRefreshing ? ' animate-spin' : '')} onClick={() => loadData(true)} title="Refresh">{Icons.loader}</button>
-          </div>
-          {activeTab === 'all' && (
-            <button className="btn btn--primary btn--sm" onClick={handleExport} disabled={filteredLogs.length === 0} title={'Export ' + filteredLogs.length + ' questions'}>
-              {Icons.download}<span>Excel ({filteredLogs.length})</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {(activeTab !== 'all' || selectedUser !== 'all') && (
-        <div style={{ padding: '3px 12px', fontSize: 11, color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>🔍</span>
-          {activeTab !== 'all' && <span style={{ background: 'rgba(79,124,255,0.15)', borderRadius: 4, padding: '1px 6px', color: 'var(--color-accent-blue)' }}>{activeTab === 'pending' ? 'Partial + Unresolved' : activeTab}</span>}
-          {selectedUser !== 'all' && <span style={{ background: 'rgba(79,124,255,0.15)', borderRadius: 4, padding: '1px 6px', color: 'var(--color-accent-blue)' }}>User: {selectedUser}</span>}
-          <button style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: 11 }} onClick={() => { switchTab('all'); setSelectedUser('all'); }}>x Clear</button>
-        </div>
-      )}
-
-      <div className="dashboard__table-wrap">
+      {/* Data Table */}
+      <div className="flex-1 px-5 pb-5 overflow-y-auto">
         {filteredLogs.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state__icon">{Icons.inbox}</div>
-            <h4 className="empty-state__title">No Questions Found</h4>
-            <p className="empty-state__text">{logs.length === 0 ? 'No questions have been asked yet.' : 'No questions match the current filters.'}</p>
+          <div className="flex flex-col items-center justify-center py-14 px-5 text-center bg-[#363B48] rounded-[20px] border border-white/5">
+            <div className="text-[36px] text-[#6C748A] mb-3">{Icons.inbox}</div>
+            <h4 className="text-[18px] font-bold text-white mb-1.5">No Questions Found</h4>
+            <p className="text-[13px] text-[#9CA3B6] max-w-[360px] leading-relaxed">
+              {logs.length === 0 ? 'No questions asked in this session yet.' : 'No questions match active filters.'}
+            </p>
           </div>
         ) : (
-          <table className="data-table">
+          <table className="data-table rounded-[16px] overflow-hidden bg-[#363B48]">
             <thead>
               <tr>
-                <th style={{ width: 32 }}>#</th>
-                <th style={{ width: 50 }}>Time</th>
-                <th style={{ width: 80 }}>User</th>
+                <th className="w-9 text-center">#</th>
+                <th className="w-[90px] whitespace-nowrap">Time</th>
+                <th className="w-[110px]">User</th>
                 <th>Question</th>
-                <th style={{ width: 96 }}>Status</th>
+                <th className="w-[110px]">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -242,14 +259,18 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
                 const isEx = expandedRow === i;
                 return (
                   <>
-                    <tr key={q.id || i} onClick={() => setExpandedRow(isEx ? null : i)} className="dash-row" title="Click to view answer">
-                      <td style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>{i + 1}</td>
-                      <td className="data-table__time">{formatTime(q.timestamp)}</td>
-                      <td className="data-table__user" title={q.user_name || q.username}>{truncate(q.user_name || q.username || 'Participant', 12)}</td>
-                      <td className="data-table__question" title={q.question}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span style={{ flex: 1 }}>{truncate(q.question)}</span>
-                          <span style={{ color: 'var(--color-text-muted)', fontSize: 10 }}>{isEx ? '\u25b2' : '\u25bc'}</span>
+                    <tr
+                      key={q.id || i}
+                      onClick={() => setExpandedRow(isEx ? null : i)}
+                      className={`cursor-pointer transition-colors ${isEx ? 'bg-[#44495B]' : 'bg-transparent hover:bg-white/5'}`}
+                    >
+                      <td className="text-[#6C748A] text-[11px] text-center font-semibold">{i + 1}</td>
+                      <td className="text-[11px] text-[#9CA3B6] whitespace-nowrap">{formatTime(q.timestamp)}</td>
+                      <td className="font-semibold text-white">{truncate(q.user_name || q.username || 'Participant', 14)}</td>
+                      <td>
+                        <span className="flex items-center gap-1.5">
+                          <span className="flex-1 text-white">{truncate(q.question, 50)}</span>
+                          <span className="text-[#82B4FF] text-[10px]">{isEx ? '▲' : '▼'}</span>
                         </span>
                       </td>
                       <td>
@@ -259,26 +280,62 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
                       </td>
                     </tr>
                     {isEx && (
-                      <tr key={'exp-' + i} className="expanded-row">
-                        <td colSpan="5">
-                          <div className="expanded-row__content">
-                            <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
-                              <div style={{ flex: 1 }}>
-                                <div className="expanded-row__label">Question</div>
-                                <p style={{ marginBottom: 'var(--space-3)', color: 'var(--color-text-primary)' }}>{q.question}</p>
-                                <div className="expanded-row__label">AI Answer</div>
-                                <p style={{ marginBottom: 0, lineHeight: 1.6 }}>{q.answer || 'No answer recorded.'}</p>
+                      <tr key={'exp-' + i}>
+                        <td colSpan="5" className="p-4 bg-[#262933] border-b border-white/5">
+                          <div className="bg-[#363B48] rounded-[16px] p-5 border border-white/10 shadow-xl flex flex-col gap-4">
+                            {/* Question Header & Body */}
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <div className="text-[#82B4FF] text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                                  <span>QUESTION ASKED BY ❓ : </span>
+                                  <span className="text-white font-bold">{q.user_name || q.username || 'Participant'}</span>
+                                </div>
+                                <span className="text-[11px] text-[#9CA3B6]">
+                                  🕒 {formatTimestamp(q.timestamp)}
+                                </span>
                               </div>
-                              <div style={{ minWidth: 110, fontSize: 11, color: 'var(--color-text-muted)' }}>
-                                <div style={{ marginBottom: 4 }}>User: {q.user_name || q.username || 'Participant'}</div>
-                                <div style={{ marginBottom: 4 }}>Role: {q.user_role || 'participant'}</div>
-                                <div style={{ marginBottom: 4 }}>Session: {truncate(q.session_id || '', 10)}</div>
-                                <div style={{ marginBottom: 6 }}>{formatTimestamp(q.timestamp)}</div>
-                                <span className={'status-badge status-badge--' + ns.toLowerCase()} style={{ fontSize: 10 }}>
+
+                              <div className="text-[14.5px] font-semibold text-white leading-relaxed bg-[#2A2E39] p-3.5 rounded-[12px] border border-white/5">
+                                {q.question}
+                              </div>
+                            </div>
+
+                            {/* AI Answer Section */}
+                            {/* {q.answer && (
+                              <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <div className="text-[#32D74B] text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                                    <span>🤖 AI CLINICAL RESPONSE</span>
+                                  </div>
+                                  {q.confidence_score && (
+                                    <span className="text-[11px] font-bold text-[#82B4FF] bg-[#2777FF]/15 px-2 py-0.5 rounded-md">
+                                      🎯 {Math.round(q.confidence_score * 100)}% match
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="text-[13.5px] leading-relaxed text-white/95 bg-[#2A2E39] p-4 rounded-[12px] border border-white/5 whitespace-pre-wrap">
+                                  {q.answer} || ytftfghy
+                                </div>
+                              </div>
+                            )} */}
+
+                            {/* Metadata Footer: Source Document & Status */}
+                            {/* <div className="flex items-center justify-between pt-2 border-t border-white/5 text-xs">
+                              <div className="flex items-center gap-3 text-[#9CA3B6]">
+                                {q.source_document && (
+                                  <span className="px-2.5 py-0.5 rounded-md bg-white/5 border border-white/10 text-[#82B4FF] text-[11px] font-semibold">
+                                    📄 {q.source_document} {q.source_page ? `(p. ${q.source_page})` : ''}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2.5">
+                                <span className={'status-badge status-badge--' + ns.toLowerCase()}>
                                   {statusIcons[ns]} {ns}
                                 </span>
                               </div>
-                            </div>
+                            </div> */}
                           </div>
                         </td>
                       </tr>
@@ -289,10 +346,6 @@ export default function DashboardView({ context, meetingInfo, onNavigate, onEndM
             </tbody>
           </table>
         )}
-      </div>
-
-      <div style={{ padding: '5px 12px', fontSize: 10, color: 'var(--color-text-muted)', borderTop: '1px solid var(--glass-border)', textAlign: 'center' }}>
-        All meeting data (questions, answers, knowledge base) is permanently erased when you click "End Meeting"
       </div>
     </div>
   );

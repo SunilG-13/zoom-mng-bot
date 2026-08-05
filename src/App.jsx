@@ -20,6 +20,7 @@ import WaitingView from './views/WaitingView';
 import ChatView from './views/ChatView';
 import DashboardView from './views/DashboardView';
 import ExportModal from './views/ExportView';
+import SessionHeader from './components/SessionHeader';
 import { endMeeting } from './api';
 import { Icons } from './components/Icons';
 
@@ -238,39 +239,44 @@ function AppInner() {
       );
     }
 
-    // Chat + Dashboard views (always mounted together for smooth tab switching)
+    // Chat + Dashboard views under fixed SessionHeader
     return (
-      <>
-        <div style={{ display: currentView === 'chat' ? 'flex' : 'none', flexDirection: 'column', height: '100%', width: '100%' }}>
-          <ChatView
-            key={`chat-${resetGeneration}`}
-            context={context}
-            meetingInfo={meetingInfo}
-            onNavigate={handleNavigate}
-            onEndMeeting={handleEndMeetingRequest}
-            onChangeCompany={isHost ? handleChangeCompany : undefined}
-            pendingCount={pendingCount}
-          />
+      <div className="flex flex-col h-full w-full">
+        <SessionHeader
+          context={context}
+          meetingInfo={meetingInfo}
+          currentView={currentView}
+          onNavigate={handleNavigate}
+          onEndMeeting={handleEndMeetingRequest}
+          onChangeCompany={isHost ? handleChangeCompany : undefined}
+          onLeaveSession={resetAllState}
+          pendingCount={pendingCount}
+        />
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className={`flex-col h-full w-full ${currentView === 'chat' ? 'flex' : 'hidden'}`}>
+            <ChatView
+              key={`chat-${resetGeneration}`}
+              context={context}
+              meetingInfo={meetingInfo}
+            />
+          </div>
+          <div className={`flex-col h-full w-full ${currentView === 'dashboard' ? 'flex' : 'hidden'}`}>
+            <DashboardView
+              key={`dash-${resetGeneration}`}
+              context={context}
+              meetingInfo={meetingInfo}
+              onExport={handleExportRequest}
+              onLogsUpdated={handleLogsUpdated}
+            />
+          </div>
         </div>
-        <div style={{ display: currentView === 'dashboard' ? 'flex' : 'none', flexDirection: 'column', height: '100%', width: '100%' }}>
-          <DashboardView
-            key={`dash-${resetGeneration}`}
-            context={context}
-            meetingInfo={meetingInfo}
-            onNavigate={handleNavigate}
-            onEndMeeting={handleEndMeetingRequest}
-            onChangeCompany={handleChangeCompany}
-            onExport={handleExportRequest}
-            onLogsUpdated={handleLogsUpdated}
-          />
-        </div>
-      </>
+      </div>
     );
   };
 
   return (
     <>
-      <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div className="h-full w-full flex flex-col">
         {renderActiveView()}
       </div>
       {showEndModal && (

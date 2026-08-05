@@ -60,17 +60,17 @@ export default function ParticipantEntryView({ onJoin, onBack }) {
   return (
     <div className="flex flex-col items-center justify-center h-full w-full bg-[#2B2D33] p-6">
       {/* Centered Join Form Card */}
-      <div className="max-w-[440px] w-full bg-[#363B48] rounded-[24px] px-7 py-9 shadow-2xl shadow-black/50 flex flex-col items-center border border-white/5">
+      <div className="max-w-[440px] w-full bg-[#363B48] rounded-[24px] px-4 py-4 shadow-2xl shadow-black/50 flex flex-col items-center border border-white/5">
         {/* Official Brand MNG Logo Header */}
         <div className="flex items-center justify-center mb-3">
-          <img src="./MNG_Health.png" alt="MNG Health" className="h-9 w-auto object-contain drop-shadow-md" />
+          <img src="./MNG_Health.png" alt="MNG Health" className="h-8 w-auto object-contain drop-shadow-md" />
         </div>
 
-        <h2 className="text-[24px] font-bold text-white mb-1 text-center">
+        <h2 className="text-[20px] font-bold text-white mb-1 text-center">
           Join Clinical Session
         </h2>
 
-        <p className="text-[13px] text-[#9CA3B6] mb-6 text-center leading-relaxed">
+        <p className="text-[12px] text-[#9CA3B6] mb-6 text-center leading-relaxed">
           Enter your display name and Meeting ID provided by the host.
         </p>
 
@@ -119,7 +119,7 @@ export default function ParticipantEntryView({ onJoin, onBack }) {
           <button
             type="button"
             onClick={onBack}
-            className="w-[32%] py-3.5 px-4 rounded-[14px] bg-[#44495B] hover:bg-[#4c5266] active:scale-[0.99] text-white text-sm font-semibold border border-white/10 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
+            className="w-[32%] p-2 rounded-[14px] bg-[#44495B] hover:bg-[#4c5266] active:scale-[0.99] text-white text-sm font-semibold border border-white/10 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
           >
             ← Back
           </button>
@@ -128,7 +128,7 @@ export default function ParticipantEntryView({ onJoin, onBack }) {
             type="button"
             disabled={!canJoin || isChecking}
             onClick={handleJoin}
-            className={`w-[68%] py-3.5 px-[18px] rounded-[14px] text-white text-sm font-bold border-0 flex items-center justify-center gap-2 transition-all ${
+            className={`w-[68%] p-2 rounded-[14px] text-white text-sm font-bold border-0 flex items-center justify-center gap-2 transition-all ${
               canJoin && !isChecking
                 ? 'bg-[#2777FF] hover:bg-[#1e5fc9] active:scale-[0.99] cursor-pointer shadow-[0_6px_20px_rgba(39,119,255,0.35)]'
                 : 'bg-[#2777FF]/40 cursor-not-allowed'

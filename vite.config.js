@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 /**
  * Vite plugin: multi-meeting relay.
@@ -127,13 +128,13 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   return {
-    plugins: [react(), meetingRelayPlugin()],
+    plugins: [react(), tailwindcss(), meetingRelayPlugin()],
     server: {
       port: 5173,
       // Proxy /api requests to the backend to avoid CORS/mixed-content blocks
       proxy: {
         "/api": {
-          target: env.VITE_BACKEND_URL || "http://80.89.38.229:10601",
+          target: env.VITE_BACKEND_URL || "http://87.106.223.150:30122",
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, ""),
         },

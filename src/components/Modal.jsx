@@ -1,6 +1,6 @@
 /* ============================================
    MNG Bot — Modal Component
-   Reusable modal dialog with variants
+   Reusable modal dialog with Tailwind CSS styling
    ============================================ */
 import { useEffect, useCallback } from 'react';
 import { Icons } from './Icons';
@@ -31,24 +31,30 @@ export function Modal({
 
   return (
     <div
-      className="modal-overlay"
+      className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-[500] p-4 animate-fade-in"
       onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
     >
-      <div className="modal" role="dialog" aria-modal="true">
-        <div className="modal__header">
-          <h3 className="modal__title">{title}</h3>
-          <button className="modal__close" onClick={handleClose} aria-label="Close">
+      <div className="bg-[#363B48] border border-white/10 rounded-[24px] shadow-[0_25px_60px_rgba(0,0,0,0.6)] w-full max-w-[440px] overflow-hidden text-white flex flex-col" role="dialog" aria-modal="true">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#363B48]">
+          <h3 className="text-base font-bold text-white">{title}</h3>
+          <button
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-[#9CA3B6] hover:text-white hover:bg-white/10 transition-colors bg-transparent border-0 cursor-pointer"
+            onClick={handleClose}
+            aria-label="Close"
+          >
             {Icons.x}
           </button>
         </div>
-        <div className="modal__body">
+
+        <div className="p-6 text-[#9CA3B6] text-sm leading-relaxed">
           {children}
         </div>
-        <div className="modal__footer">
-          <button className="btn btn--secondary" onClick={handleClose}>
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/5 bg-[#363B48]">
+          <button className="btn btn--secondary px-4 py-2 text-xs rounded-full" onClick={handleClose}>
             {cancelText}
           </button>
-          <button className={`btn ${confirmClass}`} onClick={onConfirm}>
+          <button className={`btn ${confirmClass} px-5 py-2 text-xs rounded-full font-bold`} onClick={onConfirm}>
             {confirmText}
           </button>
         </div>
@@ -58,7 +64,7 @@ export function Modal({
 }
 
 /**
- * End Meeting Confirmation Modal
+ * Redesigned End Meeting Confirmation Modal
  */
 export function EndMeetingModal({ onConfirm, onClose }) {
   return (
@@ -69,34 +75,45 @@ export function EndMeetingModal({ onConfirm, onClose }) {
       onConfirm={onConfirm}
       onClose={onClose}
     >
-      <div className="modal__text" style={{ marginBottom: 'var(--space-4)' }}>
-        <p style={{ marginBottom: 'var(--space-3)', color: 'var(--color-text-primary)', fontWeight: 600 }}>
+      <div className="flex flex-col items-center text-center">
+        {/* Warning Icon Badge */}
+        <div className="w-12 h-12 rounded-full bg-[#E12A1F]/15 border border-[#E12A1F] text-[#E12A1F] flex items-center justify-center text-xl font-bold mb-3.5 shadow-[0_0_20px_rgba(225,42,31,0.3)]">
+          ⚠️
+        </div>
+
+        <h4 className="text-lg font-bold text-white mb-1.5">
           Are you sure you want to end this meeting?
+        </h4>
+
+        <p className="text-xs text-[#9CA3B6] mb-4">
+          This action will permanently purge the following session data:
         </p>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>
-          This action will permanently delete:
-        </p>
-        <ul style={{
-          marginTop: 'var(--space-2)',
-          paddingLeft: 'var(--space-5)',
-          color: 'var(--color-text-muted)',
-          fontSize: 'var(--font-size-sm)',
-        }}>
-          <li style={{ marginBottom: 4, listStyle: 'disc' }}>Vector database & embeddings</li>
-          <li style={{ marginBottom: 4, listStyle: 'disc' }}>All conversation memories</li>
-          <li style={{ marginBottom: 4, listStyle: 'disc' }}>Question logs & dashboard data</li>
-          <li style={{ marginBottom: 4, listStyle: 'disc' }}>All temporary files</li>
-        </ul>
-      </div>
-      <div style={{
-        padding: 'var(--space-3)',
-        background: 'var(--color-danger-bg)',
-        border: '1px solid var(--color-unresolved-border)',
-        borderRadius: 'var(--radius-md)',
-        fontSize: 'var(--font-size-xs)',
-        color: 'var(--color-danger)',
-      }}>
-        ⚠️ This action cannot be undone. Download the Excel report first if needed.
+
+        {/* Deleted Data Items Card */}
+        <div className="w-full bg-[#2A2E39] rounded-[14px] p-3.5 mb-4 border border-white/5 text-left flex flex-col gap-2 text-xs font-semibold text-white/90">
+          <div className="flex items-center gap-2">
+            <span className="text-[#E12A1F]">🗑️</span>
+            <span>Vector database & PDF embeddings</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[#E12A1F]">🗑️</span>
+            <span>Live conversation context & memories</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[#E12A1F]">🗑️</span>
+            <span>Question logs & dashboard analytics</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[#E12A1F]">🗑️</span>
+            <span>All temporary session files</span>
+          </div>
+        </div>
+
+        {/* High-Contrast Red Warning Box */}
+        <div className="w-full p-3.5 bg-[#E12A1F]/15 border border-[#E12A1F]/30 rounded-[12px] text-xs text-[#FF8A84] font-semibold flex items-center gap-2.5 text-left leading-snug">
+          <span className="text-base shrink-0">⚠️</span>
+          <span>This action cannot be undone. Download your Excel Report from the dashboard before ending if needed.</span>
+        </div>
       </div>
     </Modal>
   );

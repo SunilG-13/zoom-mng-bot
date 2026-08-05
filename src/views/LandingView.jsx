@@ -1,50 +1,98 @@
 /* ============================================
-   MNG Bot — Landing View
-   
-   Role selection screen: Host or Participant.
-   This is the first page every user sees.
+   MNG Bot — Landing View (Virtual Event Access)
+   Matched 1:1 with user reference layout
    ============================================ */
+import { useState } from 'react';
 import { Icons } from '../components/Icons';
 
 export default function LandingView({ onSelectRole }) {
+  const [selectedRole, setSelectedRole] = useState('host');
+
+  const handleProceed = () => {
+    if (selectedRole && onSelectRole) {
+      onSelectRole(selectedRole);
+    }
+  };
+
   return (
-    <div className="splash">
-      <div className="splash__bg" />
-      <div className="splash__content" style={{ padding: '0 24px', maxWidth: 400 }}>
-        <div className="splash__logo" style={{ marginBottom: 12 }}>
-          {Icons.bot}
+    <div className="flex flex-col items-center justify-center h-full w-full bg-[#2B2D33] p-6">
+      <div className="max-w-[440px] w-full bg-[#363B48] rounded-[24px] px-8 py-10 shadow-2xl shadow-black/50 flex flex-col items-center text-center border border-white/5">
+        {/* Official Brand MNG Logo Header */}
+        <div className="flex items-center justify-center mb-5">
+          <img src="./MNG_Health.png" alt="MNG Health" className="h-10 w-auto object-contain drop-shadow-md" />
         </div>
-        <h1 className="splash__title" style={{ marginBottom: 4 }}>MNG Bot</h1>
-        <p className="splash__subtitle" style={{ marginBottom: 32 }}>
-          AI-Powered Meeting Assistant
+
+        {/* Title & Subtitle */}
+        <h1 className="text-[26px] font-bold text-white mb-1.5 tracking-tight">
+          Virtual Event Access
+        </h1>
+
+        <p className="text-[13px] text-[#9CA3B6] mb-8 leading-relaxed">
+          Please select your access role to join the session
         </p>
 
-        <button
-          className="btn btn--primary btn--lg btn--full"
-          onClick={() => onSelectRole('host')}
-          style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-        >
-          👑 I am the Host
-        </button>
+        {/* ACCESS ROLE Label */}
+        <div className="w-full text-left text-[11px] font-bold text-[#9CA3B6] uppercase tracking-widest mb-3">
+          ACCESS ROLE
+        </div>
 
-        <button
-          className="btn btn--secondary btn--lg btn--full"
-          onClick={() => onSelectRole('participant')}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-        >
-          👤 I am a Participant
-        </button>
+        {/* Side-by-Side 2 Column Role Cards Grid */}
+        <div className="grid grid-cols-2 gap-3.5 w-full mb-7">
+          {/* ORGANIZER Card */}
+          <div
+            onClick={() => setSelectedRole('host')}
+            className={`p-6 rounded-[16px] min-h-[140px] cursor-pointer flex flex-col items-center justify-center text-center transition-all duration-200 ${
+              selectedRole === 'host'
+                ? 'bg-[#2777FF]/15 border-2 border-[#2777FF] shadow-[0_0_24px_rgba(39,119,255,0.3)]'
+                : 'bg-[#2A2E39] border border-white/5 hover:border-white/15'
+            }`}
+          >
+            {/* Shield Icon */}
+            <div className={`text-[32px] mb-3 transition-colors ${selectedRole === 'host' ? 'text-[#2777FF]' : 'text-[#9CA3B6]'}`}>
+              <i className="bx bx-shield-alt-2" />
+            </div>
 
-        <p style={{
-          marginTop: 24,
-          fontSize: 11,
-          color: 'var(--color-text-muted)',
-          textAlign: 'center',
-          lineHeight: 1.5,
-        }}>
-          Hosts create meetings with a custom Meeting ID.<br />
-          Participants join by entering the Meeting ID.
-        </p>
+            <div className="text-[13px] font-extrabold text-white tracking-wider mb-1">
+              ORGANIZER
+            </div>
+            
+            <div className={`text-[10px] font-semibold uppercase leading-tight ${selectedRole === 'host' ? 'text-[#82B4FF]' : 'text-[#6C748A]'}`}>
+              MANAGE SESSION & QUESTIONS
+            </div>
+          </div>
+
+          {/* GUEST Card */}
+          <div
+            onClick={() => setSelectedRole('participant')}
+            className={`p-6 rounded-[16px] min-h-[140px] cursor-pointer flex flex-col items-center justify-center text-center transition-all duration-200 ${
+              selectedRole === 'participant'
+                ? 'bg-[#2777FF]/15 border-2 border-[#2777FF] shadow-[0_0_24px_rgba(39,119,255,0.3)]'
+                : 'bg-[#2A2E39] border border-white/5 hover:border-white/15'
+            }`}
+          >
+            {/* User Icon */}
+            <div className={`text-[32px] mb-3 transition-colors ${selectedRole === 'participant' ? 'text-[#2777FF]' : 'text-[#9CA3B6]'}`}>
+              <i className="bx bx-user" />
+            </div>
+
+            <div className="text-[13px] font-extrabold text-white tracking-wider mb-1">
+              GUEST
+            </div>
+            
+            <div className={`text-[10px] font-semibold uppercase leading-tight ${selectedRole === 'participant' ? 'text-[#82B4FF]' : 'text-[#6C748A]'}`}>
+              PARTICIPATE IN DISCUSSION
+            </div>
+          </div>
+        </div>
+
+        {/* Primary Next Step Button */}
+        <button
+          onClick={handleProceed}
+          disabled={!selectedRole}
+          className="w-full py-4 px-6 rounded-[14px] bg-[#2777FF] hover:bg-[#1e5fc9] active:scale-[0.99] text-white text-[15px] font-bold border-0 cursor-pointer shadow-[0_6px_20px_rgba(39,119,255,0.4)] transition-all"
+        >
+          Next Step
+        </button>
       </div>
     </div>
   );

@@ -13,16 +13,12 @@ const CONFIG = {
   COMPANIES: [
     { id: 'pfizer',      name: 'Pfizer',      icon: 'P', pdfs: 5 },
     { id: 'biocon',      name: 'Biocon',       icon: 'B', pdfs: 3 },
-    { id: 'novartis',    name: 'Novartis',     icon: 'N', pdfs: 4 },
-    { id: 'roche',       name: 'Roche',        icon: 'R', pdfs: 6 },
-    { id: 'astrazeneca', name: 'AstraZeneca',  icon: 'A', pdfs: 4 },
-    { id: 'sanofi',      name: 'Sanofi',       icon: 'S', pdfs: 3 },
   ],
-  SUGGESTIONS: [
-    'What is the recommended dosage?',
-    'What are the contraindications?',
-    'What are the side effects?',
-  ],
+  // SUGGESTIONS: [
+  //   'What is the recommended dosage?',
+  //   'What are the contraindications?',
+  //   'What are the side effects?',
+  // ],
   EXPORT_COLUMNS_DEFAULT: [
     { key: 'timestamp',  label: 'Timestamp',  checked: true },
     { key: 'username',   label: 'Username',   checked: true },

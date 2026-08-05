@@ -1,17 +1,37 @@
 /* ============================================
    MNG Bot — Chat View
-   Q&A interface for all participants and hosts.
-   
-   Uses context.meeting_id (user-entered) for ALL API calls.
+   Matched 1:1 with D:\E drive\All Projects\mng-meeting-room
    ============================================ */
 import { useState, useRef, useEffect } from 'react';
 import { Icons } from '../components/Icons';
-import { askQuestion, getAllQuestions, getParticipantQuestions } from '../api';
+import { askQuestion, getAllQuestions, getParticipantQuestions, CONFIG } from '../api';
 import { useToast } from '../components/Toast';
 
-function formatTime(date) {
-  if (!(date instanceof Date)) date = new Date(date);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function parseDate(dateVal) {
+  if (!dateVal) return new Date();
+  if (dateVal instanceof Date) return dateVal;
+  
+  if (typeof dateVal === 'number') return new Date(dateVal);
+
+  if (typeof dateVal === 'string') {
+    let str = dateVal.trim();
+    if (/^\d+$/.test(str)) {
+      return new Date(parseInt(str, 10));
+    }
+    // If backend returns UTC ISO string without 'Z' or offset, append 'Z' so browser converts UTC to Local timezone
+    if (!str.endsWith('Z') && !str.includes('+') && !/-\d{2}:\d{2}$/.test(str)) {
+      str = str.replace(' ', 'T') + 'Z';
+    }
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  return new Date();
+}
+
+function formatTime(dateVal) {
+  const date = parseDate(dateVal);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 function getInitials(name) {
@@ -25,12 +45,6 @@ const statusIcons = {
   Unresolved: Icons.xCircle,
 };
 
-const STATUS_COLORS = {
-  Resolved:   'var(--color-success)',
-  Partial:    'var(--color-warning)',
-  Unresolved: 'var(--color-danger)',
-};
-
 function normalizeStatus(s) {
   if (!s) return null;
   const lower = String(s).toLowerCase().trim();
@@ -40,7 +54,7 @@ function normalizeStatus(s) {
   return null;
 }
 
-export default function ChatView({ context, meetingInfo, onNavigate, onEndMeeting, onChangeCompany, pendingCount }) {
+export default function ChatView({ context, meetingInfo }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -54,7 +68,6 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
   const userRole = context?.user_role || (isHost ? 'host' : 'participant');
   const sessionId = context?.session_id;
 
-  // Restore participant's own chat history when joining/rejoining
   useEffect(() => {
     if (!meetingId) return;
 
@@ -101,7 +114,6 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
     return () => { isSubscribed = false; };
   }, [meetingId, sessionId]);
 
-  // Auto-scroll on new messages
   useEffect(() => {
     if (messagesRef.current) {
       requestAnimationFrame(() => {
@@ -164,7 +176,6 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
       };
       setMessages(prev => [...prev, botMsg]);
 
-      // Refresh dashboard data in background (host only)
       if (isHost) {
         try {
           const data = await getAllQuestions(meetingId);
@@ -187,7 +198,7 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
       await navigator.clipboard.writeText(text);
       toast.success('Copied to clipboard');
     } catch {
-      toast.info('Could not copy to clipboard');
+      toast.info('Could not copy');
     }
   };
 
@@ -199,81 +210,35 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
   };
 
   return (
-    <div className="chat">
-      {/* Header */}
-      <div className="app-header">
-        <div className="app-header__left">
-          <div className="app-header__logo">{Icons.bot}</div>
-          <div>
-            <span className="app-header__title">MNG Bot</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1 }}>
-              <span style={{ fontSize: 11, color: 'var(--color-accent-blue)', fontWeight: 600 }}>
-                🏢 {meetingInfo?.companyName || 'Company'}
-              </span>
-              <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
-                • {meetingId}
-              </span>
-              {isHost && onChangeCompany && (
-                <button
-                  className="btn btn--ghost btn--xs"
-                  onClick={onChangeCompany}
-                  style={{ fontSize: 10, padding: '1px 5px', height: 'auto', color: 'var(--color-accent-blue)', border: '1px solid rgba(79,124,255,0.3)', borderRadius: 4 }}
-                  title="Change Company Knowledge Base"
-                >
-                  ✏️ Change
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="app-header__right">
-          <span style={{ fontSize: 11, color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4, marginRight: 8 }}>
-            {Icons.user} {userName}
-          </span>
-          <div className="app-header__meeting-badge">
-            <span className="dot" />
-            <span>Live</span>
-          </div>
-          {isHost && (
-            <button className="btn btn--danger btn--sm" onClick={onEndMeeting} title="End Meeting">
-              {Icons.power}
-              <span>End</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Host Tab Nav */}
-      {isHost && (
-        <div className="chat__header-nav">
-          <div className="tab-nav">
-            <button className="tab-nav__item tab-nav__item--active" onClick={() => onNavigate('chat')}>
-              {Icons.messageSquare}
-              <span>Chat</span>
-            </button>
-            <button className="tab-nav__item" onClick={() => onNavigate('dashboard')}>
-              {Icons.layoutDashboard}
-              <span>Dashboard</span>
-              {pendingCount > 0 && (
-                <span className="tab-nav__badge">{pendingCount}</span>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Messages Area */}
-      <div className="chat__messages" ref={messagesRef}>
+    <div className="chat bg-[#2B2D33] h-full flex flex-col">
+      {/* Messages Scroll Area */}
+      <div className="flex-1 overflow-y-auto px-5 py-6 flex flex-col gap-4" ref={messagesRef}>
         {/* Welcome State */}
         {showWelcome && messages.length === 0 && (
-          <div className="chat__welcome">
-            <div className="chat__welcome-icon">
+          <div className="flex flex-col items-center justify-center py-12 px-5 text-center my-auto">
+            <div className="w-[60px] h-[60px] rounded-[18px] bg-[#2777FF] flex items-center justify-center text-[32px] mb-4.5 text-white shadow-[0_8px_24px_rgba(39,119,255,0.4)]">
               {Icons.sparkles}
             </div>
-            <h3 className="chat__welcome-title">Ask about {meetingInfo?.companyName || "the company"}</h3>
-            <p className="chat__welcome-text">
-              Type your questions in the input field below to search the loaded documents.
+            <h3 className="text-[22px] font-bold text-white mb-1.5">
+              Clinical Drug Intelligence — {meetingInfo?.companyName || "Company"}
+            </h3>
+            <p className="text-[13px] text-[#9CA3B6] max-w-[440px] mb-7 leading-relaxed">
+              Ask questions to query the ingested drug monographs, clinical reports, and dosage guidelines.
             </p>
+
+            {/* AI Suggestion Chips */}
+            {/* <div className="flex flex-wrap gap-2.5 justify-center max-w-[480px]">
+              {CONFIG.SUGGESTIONS.map((suggestion, index) => (
+                <button
+                  key={index}
+                  className="btn-ai-sugg m-0 px-4 py-2 text-xs rounded-full bg-[#2777FF]/10 border border-[#2777FF]/30 text-[#82B4FF] hover:bg-[#2777FF]/20 transition-all cursor-pointer flex items-center gap-1.5"
+                  onClick={() => handleSend(suggestion)}
+                >
+                  <span>💡</span>
+                  <span>{suggestion}</span>
+                </button>
+              ))}
+            </div> */}
           </div>
         )}
 
@@ -283,7 +248,7 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
             <div className="message__avatar">
               {msg.type === 'user'
                 ? getInitials(msg.sender)
-                : <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{Icons.bot}</span>
+                : <span className="flex items-center justify-center w-[18px] h-[18px]">{Icons.bot}</span>
               }
             </div>
             <div className="message__content">
@@ -292,82 +257,88 @@ export default function ChatView({ context, meetingInfo, onNavigate, onEndMeetin
                 <span className="message__time">{formatTime(msg.timestamp)}</span>
               </div>
               <div className="message__bubble">
-                <p>{msg.text}</p>
+                <p className="m-0">{msg.text}</p>
               </div>
+
               {msg.type === 'bot' && (
-                <>
-                  {/* Status badge */}
-                  {(() => {
-                    const ns = normalizeStatus(msg.status);
-                    if (!ns) return null;
-                    return (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
-                          fontSize: 11, padding: '2px 8px', borderRadius: 10,
-                          background: ns === 'Resolved' ? 'rgba(34,197,94,0.12)' : ns === 'Partial' ? 'rgba(251,191,36,0.12)' : 'rgba(239,68,68,0.12)',
-                          color: STATUS_COLORS[ns],
-                          border: '1px solid',
-                          borderColor: ns === 'Resolved' ? 'rgba(34,197,94,0.3)' : ns === 'Partial' ? 'rgba(251,191,36,0.3)' : 'rgba(239,68,68,0.3)',
-                        }}>
-                          <span style={{ width: 12, height: 12, display: 'flex', alignItems: 'center' }}>{statusIcons[ns]}</span>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  {(msg.source || msg.confidence) && (
+                    <div className="flex items-center flex-wrap gap-1.5 text-[11px] text-[#9CA3B6]">
+                      {msg.source && (
+                        <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10">
+                          📄 {msg.source} {msg.page ? `(p. ${msg.page})` : ''}
+                        </span>
+                      )}
+                      {msg.confidence && (
+                        <span className="px-2 py-0.5 rounded-md bg-[#2777FF]/15 text-[#82B4FF] font-semibold">
+                          🎯 {Math.round(msg.confidence * 100)}% match
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    {(() => {
+                      const ns = normalizeStatus(msg.status);
+                      if (!ns) return <div />;
+                      return (
+                        <span className={`status-badge status-badge--${ns.toLowerCase()}`}>
+                          <span className="w-3 h-3 flex items-center">{statusIcons[ns]}</span>
                           {ns}
                         </span>
-                      </div>
-                    );
-                  })()}
-                  <div className="message__footer">
-                    <div style={{ flex: 1 }} />
-                    <div className="message__actions">
-                      <button className="message__action-btn" title="Copy" onClick={() => handleCopy(msg.text)}>
-                        {Icons.copy}
-                      </button>
-                    </div>
+                      );
+                    })()}
+
+                    <button 
+                      onClick={() => handleCopy(msg.text)}
+                      className="bg-transparent border-0 text-[#9CA3B6] hover:text-white cursor-pointer p-1 transition-colors"
+                      title="Copy text"
+                    >
+                      {Icons.copy}
+                    </button>
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>
         ))}
 
-        {/* Typing Indicator */}
         {isTyping && (
-          <div className="typing-indicator">
-            <div className="message__avatar" style={{
-              background: 'var(--color-bg-tertiary)',
-              border: '1px solid var(--glass-border)',
-              color: 'var(--color-accent-blue)',
-            }}>
-              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{Icons.bot}</span>
+          <div className="message message--bot">
+            <div className="message__avatar">
+              <span className="flex items-center justify-center w-[18px] h-[18px]">{Icons.bot}</span>
             </div>
-            <div className="typing-indicator__dots">
-              <div className="typing-indicator__dot" />
-              <div className="typing-indicator__dot" />
-              <div className="typing-indicator__dot" />
+            <div className="message__content">
+              <div className="message__bubble flex items-center gap-1.5 px-4 py-3">
+                <div className="spinner spinner--sm border-t-[#2777FF]" />
+                <span className="text-[13px] text-[#9CA3B6]">Analyzing monograph data...</span>
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Input Bar */}
-      <div className="chat-input-bar">
-        <input
-          type="text"
-          className="chat-input-bar__field"
-          placeholder="Ask about the documents..."
-          autoComplete="off"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-        />
-        <button
-          className="chat-input-bar__send"
-          disabled={!input.trim() || isTyping}
-          onClick={() => handleSend()}
-          title="Send"
-        >
-          {Icons.send}
-        </button>
+      {/* Floating Dark Input Bar */}
+      <div className="px-5 py-4 bg-[#363B48] border-t border-white/5">
+        <div className="chat-input-bar">
+          <input
+            type="text"
+            className="chat-input-bar__field"
+            placeholder={`Ask about ${meetingInfo?.companyName || 'documents'}...`}
+            autoComplete="off"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <button
+            className="chat-input-bar__send"
+            disabled={!input.trim() || isTyping}
+            onClick={() => handleSend()}
+            title="Send Question"
+          >
+            {Icons.send}
+          </button>
+        </div>
       </div>
     </div>
   );

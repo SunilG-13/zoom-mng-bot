@@ -1,12 +1,6 @@
 /* ============================================
    MNG Bot — Waiting View
-
-   Shows when participant joins before host has started.
-   Polls GET /status/{meeting_id} until host starts.
-   Once active → auto-navigates participant to Chat.
-   
-   STRICT ISOLATION: Only checks the user-entered meeting_id.
-   Never falls back to discovery or guessing.
+   Style matched 1:1 with mng-meeting-room
    ============================================ */
 import { useEffect, useState, useRef } from 'react';
 import { checkMeetingStatusById } from '../api';
@@ -23,18 +17,13 @@ export default function WaitingView({ meetingId, participantName, onMeetingActiv
     let timer = null;
 
     if (!meetingId) {
-      console.warn('⏳ WaitingView: No meetingId provided — skipping polling');
       setStatusMsg('No Meeting ID provided.');
       return;
     }
 
-    console.log(`⏳ WaitingView: Polling for meetingId="${meetingId}"`);
-
     const checkStatus = async () => {
       try {
         const res = await checkMeetingStatusById(meetingId);
-        console.log(`⏳ WaitingView: checkMeetingStatusById("${meetingId}") =>`, JSON.stringify(res));
-
         const isStarted = res?.active === true || res?.status === true;
 
         if (isStarted && isMounted) {
@@ -46,7 +35,6 @@ export default function WaitingView({ meetingId, participantName, onMeetingActiv
           setStatusMsg(`Host is active (${res.company || 'Meeting'})`);
           setIsJoining(true);
 
-          // Small delay for visual feedback, then auto-join
           setTimeout(() => {
             if (isMounted && onMeetingActiveRef.current) {
               onMeetingActiveRef.current({
@@ -57,15 +45,13 @@ export default function WaitingView({ meetingId, participantName, onMeetingActiv
             }
           }, 500);
         } else if (isMounted) {
-          setStatusMsg('Host has not started yet — waiting for host to start...');
+          setStatusMsg('Waiting for host to launch knowledge session...');
         }
       } catch (err) {
-        console.warn('⏳ WaitingView: checkStatus error:', err);
-        if (isMounted) setStatusMsg('Connecting to server...');
+        if (isMounted) setStatusMsg('Connecting to meeting server...');
       }
     };
 
-    // Initial check + interval polling
     checkStatus();
     timer = setInterval(checkStatus, 2000);
 
@@ -97,70 +83,91 @@ export default function WaitingView({ meetingId, participantName, onMeetingActiv
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--color-bg-primary)' }}>
-      <div className="app-header">
-        <div className="app-header__left">
-          <button
-            className="btn btn--ghost btn--sm"
-            onClick={onBack}
-            style={{ padding: '4px 8px', marginRight: 4 }}
-            title="Back"
-          >
-            ← Back
-          </button>
-          <div className="app-header__logo">{Icons.bot}</div>
-          <span className="app-header__title">MNG Bot</span>
-        </div>
-        <div className="app-header__right">
-          <span style={{ fontSize: 11, color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            {Icons.user} {participantName || 'Participant'}
+    <div className="flex flex-col h-full bg-[#2B2D33]">
+      {/* Top Navigation Header Bar */}
+      <header className="app-header h-[64px] px-6 bg-[#363B48] border-b border-white/5 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          <img src="./MNG_Health.png" alt="MNG Health" className="h-8 w-auto object-contain shrink-0 drop-shadow" />
+          <span className="text-[15px] font-bold text-white">
+            MNG Intelligence Waiting Room
           </span>
         </div>
-      </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '24px 16px', overflowY: 'auto' }}>
-        <h2 style={{ fontSize: 18, color: 'var(--color-text-primary)', marginBottom: 6, textAlign: 'center' }}>
-          {isJoining ? 'Joining Session... 🚀' : 'Waiting for Host... ⏳'}
-        </h2>
-        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center', marginBottom: 12, lineHeight: 1.5 }}>
-          {isJoining
-            ? 'The host has started the meeting. Joining now...'
-            : statusMsg}
-        </p>
-
-        <div style={{
-          textAlign: 'center',
-          fontSize: 12,
-          color: 'var(--color-accent-blue)',
-          marginBottom: 24,
-          padding: '6px 12px',
-          background: 'rgba(79,124,255,0.08)',
-          borderRadius: 'var(--radius-md)',
-          border: '1px solid rgba(79,124,255,0.2)',
-        }}>
-          Meeting ID: <strong>{meetingId}</strong>
+        <div className="flex items-center gap-3.5">
+          <div className="flex items-center gap-1.5 text-xs text-[#9CA3B6] font-medium">
+            {Icons.user}
+            <span className="text-white font-semibold">{participantName || 'Participant'}</span>
+          </div>
         </div>
+      </header>
 
-        {isJoining ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 12, background: 'rgba(34,197,94,0.08)', borderRadius: 'var(--radius-lg)', border: '1px solid rgba(34,197,94,0.3)' }}>
-            <div className="spinner spinner--sm" />
-            <span style={{ fontSize: 13, color: 'var(--color-success)' }}>Joining session...</span>
+      {/* Main Centered Content */}
+      <div className="flex-1 flex items-center justify-center p-6">
+        {/* Centered Glass Modal Card */}
+        <div className="max-w-[460px] w-full bg-[#363B48] rounded-[24px] px-8 py-9 border border-white/10 shadow-2xl flex flex-col items-center text-center">
+          {/* Glowing Animated Icon Emblem */}
+          <div className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl mb-5 border-2 transition-all ${
+            isJoining
+              ? 'bg-[#32D74B]/15 border-[#32D74B] shadow-[0_0_24px_rgba(50,215,75,0.35)]'
+              : 'bg-[#2777FF]/15 border-[#2777FF] shadow-[0_0_24px_rgba(39,119,255,0.35)]'
+          }`}>
+            {isJoining ? '🚀' : '⏳'}
           </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 12, background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--glass-border)' }}>
-              <div className="spinner spinner--sm" />
-              <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Waiting for host to start...</span>
+
+          {/* Heading Title */}
+          <h2 className="text-[22px] font-bold text-white mb-2 leading-tight">
+            {isJoining ? 'Session Active! Joining... 🚀' : 'Waiting for Host...'}
+          </h2>
+
+          <p className="text-[13px] text-[#9CA3B6] mb-6 leading-relaxed max-w-[360px]">
+            {isJoining
+              ? 'Host has started the session. Connecting to live chat...'
+              : 'The host will start the intelligence session shortly. You will be connected automatically.'}
+          </p>
+
+          {/* Meeting ID Badge Card */}
+          <div className="w-full bg-[#2A2E39] rounded-[14px] px-4 py-3 mb-6 border border-white/5 flex items-center justify-between">
+            <span className="text-xs text-[#9CA3B6] font-semibold">🔑 Meeting ID</span>
+            <span className="text-[15px] font-bold text-[#82B4FF] font-mono ml-2">
+              {meetingId}
+            </span>
+          </div>
+
+          {/* Status Indicator & Action Row */}
+          {isJoining ? (
+            <div className="w-full flex items-center justify-center gap-2.5 px-5 py-3.5 bg-[#32D74B]/15 rounded-full border border-[#32D74B]">
+              <div className="spinner spinner--sm border-t-[#32D74B]" />
+              <span className="text-sm font-bold text-[#32D74B]">Joining Chat Session...</span>
             </div>
-            <button
-              className="btn btn--secondary btn--sm btn--full"
-              onClick={handleManualCheck}
-              style={{ fontSize: 12 }}
-            >
-              🔄 Check Host Status Now
-            </button>
-          </div>
-        )}
+          ) : (
+            <div className="w-full flex flex-col gap-3.5">
+              {/* Live Polling Status Pill */}
+              <div className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2777FF]/10 rounded-full border border-[#2777FF]/20">
+                <div className="spinner spinner--sm border-t-[#2777FF]" />
+                <span className="text-xs font-semibold text-[#82B4FF]">
+                  Live polling active (checking every 2s)...
+                </span>
+              </div>
+
+              {/* Action Buttons Row */}
+              <div className="flex gap-2.5 w-full">
+                <button
+                  className="btn btn--secondary flex-1 py-2.5 px-4 text-xs rounded-full"
+                  onClick={onBack}
+                >
+                  ← Back
+                </button>
+                
+                <button
+                  className="btn btn--primary flex-1 py-2.5 px-4 text-xs rounded-full"
+                  onClick={handleManualCheck}
+                >
+                  🔄 Refresh Status
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

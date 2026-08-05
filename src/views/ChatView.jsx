@@ -1,7 +1,3 @@
-/* ============================================
-   MNG Bot — Chat View
-   Matched 1:1 with D:\E drive\All Projects\mng-meeting-room
-   ============================================ */
 import { useState, useRef, useEffect } from 'react';
 import { Icons } from '../components/Icons';
 import { askQuestion, getAllQuestions, getParticipantQuestions, CONFIG } from '../api';
@@ -210,35 +206,21 @@ export default function ChatView({ context, meetingInfo }) {
   };
 
   return (
-    <div className="chat bg-[#2B2D33] h-full flex flex-col">
+    <div className="chat bg-[#2B2D33] h-full flex flex-col min-w-0">
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto px-5 py-6 flex flex-col gap-4" ref={messagesRef}>
+      <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 sm:py-6 flex flex-col gap-3.5" ref={messagesRef}>
         {/* Welcome State */}
         {showWelcome && messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 px-5 text-center my-auto">
-            <div className="w-[60px] h-[60px] rounded-[18px] bg-[#2777FF] flex items-center justify-center text-[32px] mb-4.5 text-white shadow-[0_8px_24px_rgba(39,119,255,0.4)]">
+          <div className="flex flex-col items-center justify-center py-8 sm:py-12 px-3 text-center my-auto">
+            <div className="w-[40px] h-[40px] sm:w-[55px] sm:h-[55px] p-1 rounded-[14px] sm:rounded-[18px] bg-[#2777FF] flex items-center justify-center text-[24px] sm:text-[32px] mb-3.5 text-white shadow-[0_8px_24px_rgba(39,119,255,0.4)]">
               {Icons.sparkles}
             </div>
-            <h3 className="text-[22px] font-bold text-white mb-1.5">
+            <h3 className="text-base sm:text-[20px] font-bold text-white mb-1.5 leading-snug">
               Clinical Drug Intelligence — {meetingInfo?.companyName || "Company"}
             </h3>
-            <p className="text-[13px] text-[#9CA3B6] max-w-[440px] mb-7 leading-relaxed">
+            <p className="text-xs sm:text-[13px] text-[#9CA3B6] max-w-[440px] mb-5 leading-relaxed">
               Ask questions to query the ingested drug monographs, clinical reports, and dosage guidelines.
             </p>
-
-            {/* AI Suggestion Chips */}
-            {/* <div className="flex flex-wrap gap-2.5 justify-center max-w-[480px]">
-              {CONFIG.SUGGESTIONS.map((suggestion, index) => (
-                <button
-                  key={index}
-                  className="btn-ai-sugg m-0 px-4 py-2 text-xs rounded-full bg-[#2777FF]/10 border border-[#2777FF]/30 text-[#82B4FF] hover:bg-[#2777FF]/20 transition-all cursor-pointer flex items-center gap-1.5"
-                  onClick={() => handleSend(suggestion)}
-                >
-                  <span>💡</span>
-                  <span>{suggestion}</span>
-                </button>
-              ))}
-            </div> */}
           </div>
         )}
 
@@ -263,9 +245,9 @@ export default function ChatView({ context, meetingInfo }) {
               {msg.type === 'bot' && (
                 <div className="mt-2 flex flex-col gap-1.5">
                   {(msg.source || msg.confidence) && (
-                    <div className="flex items-center flex-wrap gap-1.5 text-[11px] text-[#9CA3B6]">
+                    <div className="flex items-center flex-wrap gap-1.5 text-[10px] sm:text-[11px] text-[#9CA3B6]">
                       {msg.source && (
-                        <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10">
+                        <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 truncate max-w-[200px]">
                           📄 {msg.source} {msg.page ? `(p. ${msg.page})` : ''}
                         </span>
                       )}
@@ -311,7 +293,7 @@ export default function ChatView({ context, meetingInfo }) {
             <div className="message__content">
               <div className="message__bubble flex items-center gap-1.5 px-4 py-3">
                 <div className="spinner spinner--sm border-t-[#2777FF]" />
-                <span className="text-[13px] text-[#9CA3B6]">Analyzing monograph data...</span>
+                <span className="text-[12px] sm:text-[13px] text-[#9CA3B6]">Analyzing monograph data...</span>
               </div>
             </div>
           </div>
@@ -319,7 +301,7 @@ export default function ChatView({ context, meetingInfo }) {
       </div>
 
       {/* Floating Dark Input Bar */}
-      <div className="px-5 py-4 bg-[#363B48] border-t border-white/5">
+      <div className="px-3 sm:px-5 py-3 sm:py-4 bg-[#363B48] border-t border-white/5">
         <div className="chat-input-bar">
           <input
             type="text"

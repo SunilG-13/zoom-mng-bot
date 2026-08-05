@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+
 :root {
   /* Precise Color Mapping from Final Screen Reference */
   --c-app-bg:         #2B2D33;

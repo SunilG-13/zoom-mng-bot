@@ -5,6 +5,7 @@
 import { useEffect, useCallback } from 'react';
 import { Icons } from './Icons';
 
+
 export function Modal({
   title = 'Confirm',
   children,

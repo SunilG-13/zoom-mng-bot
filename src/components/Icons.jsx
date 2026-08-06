@@ -8,6 +8,7 @@ const icon = (paths) => (
   </svg>
 );
 
+
 export const Icons = {
   bot: icon(<>
     <path d="M12 8V4H8" />

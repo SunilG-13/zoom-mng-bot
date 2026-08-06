@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { Icons } from './Icons';
 
+
 export default function SessionHeader({
   context,
   meetingInfo,
